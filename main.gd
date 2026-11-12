@@ -82,6 +82,10 @@ func _ready():
 	cam.rotation.x = -0.2
 	cam.far = 600
 	pivot.add_child(cam)
+	var w := preload("res://war.gd").new()
+	w.player = player
+	w.pivot = pivot
+	add_child(w)
 
 func _input(e):
 	var w := get_viewport().get_visible_rect().size
