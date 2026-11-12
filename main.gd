@@ -1,5 +1,5 @@
 extends Node3D
-var player: Node3D
+var player
 var pivot: Node3D
 var move_idx := -1
 var look_idx := -1
@@ -72,32 +72,8 @@ func _ready():
 			add_child(box(Vector3(0.7, 0.5, 0.7), Vector3(s * 11, 7.2, z), bulb))
 			if z % 40 == 0:
 				add_child(box(Vector3(2, 0.5, 0.7), Vector3(s * 12.5, 0.5, z + 6), mat(Color(0.48, 0.35, 0.22))))
-	# Personnage
-	player = Node3D.new()
+	player = preload("res://human.gd").new()
 	add_child(player)
-	player.add_child(box(Vector3(0.8, 0.9, 0.4), Vector3(0, 1.5, 0), mat(Color(0.16, 0.17, 0.18))))
-	player.add_child(box(Vector3(0.7, 0.9, 0.35), Vector3(0, 0.55, 0), mat(Color(0.35, 0.1, 0.1))))
-	var head := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.28
-	sm.height = 0.6
-	head.mesh = sm
-	head.material_override = mat(Color(0.23, 0.16, 0.13))
-	head.position = Vector3(0, 2.25, 0)
-	player.add_child(head)
-	# Visage (perso.png) sur un plan devant la tete
-	if ResourceLoader.exists("res://perso.png"):
-		var face := MeshInstance3D.new()
-		var q := QuadMesh.new()
-		q.size = Vector2(0.5, 0.5)
-		face.mesh = q
-		var fm := StandardMaterial3D.new()
-		fm.albedo_texture = load("res://perso.png")
-		fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		face.material_override = fm
-		face.position = Vector3(0, 2.25, -0.26)
-		face.rotation.y = PI
-		player.add_child(face)
 	# Camera
 	pivot = Node3D.new()
 	add_child(pivot)
@@ -139,4 +115,5 @@ func _process(delta):
 		d = d.normalized()
 		player.position += d * 6.0 * delta * v.length()
 		player.rotation.y = lerp_angle(player.rotation.y, atan2(-d.x, -d.z), 10.0 * delta)
+	player.animate(v.length() if v.length() > 0.1 else 0.0, delta)
 	pivot.position = player.position
