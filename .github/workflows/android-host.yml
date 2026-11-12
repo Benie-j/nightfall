@@ -53,9 +53,23 @@ jobs:
           cp android-host/app/build/outputs/apk/arm64/debug/*.apk dist/nightfall-android-64bit.apk
           cp android-host/app/build/outputs/bundle/playRelease/*.aab dist/nightfall-playstore.aab
 
-      - name: Upload Android artifacts
+      - name: Upload APK 32 bits
         uses: actions/upload-artifact@v4
         with:
-          name: nightfall-android-test-builds
-          path: dist/*
+          name: nightfall-android-32bit
+          path: dist/nightfall-android-32bit.apk
+          if-no-files-found: error
+
+      - name: Upload APK 64 bits
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-android-64bit
+          path: dist/nightfall-android-64bit.apk
+          if-no-files-found: error
+
+      - name: Upload AAB Play Store
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-playstore-aab
+          path: dist/nightfall-playstore.aab
           if-no-files-found: error
