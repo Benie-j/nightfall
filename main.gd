@@ -72,7 +72,7 @@ func _ready():
 			add_child(box(Vector3(0.7, 0.5, 0.7), Vector3(s * 11, 7.2, z), bulb))
 			if z % 40 == 0:
 				add_child(box(Vector3(2, 0.5, 0.7), Vector3(s * 12.5, 0.5, z + 6), mat(Color(0.48, 0.35, 0.22))))
-	player = preload("res://human.gd").new()
+	player = preload("res://hero.gd").new()
 	add_child(player)
 	# Camera
 	pivot = Node3D.new()
