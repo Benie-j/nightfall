@@ -1,0 +1,75 @@
+name: Android Host (Kotlin + Godot)
+
+on:
+  push:
+    branches:
+      - migration/kotlin-godot
+    paths:
+      - "project.godot"
+      - "*.gd"
+      - "main.tscn"
+      - "android-host/**"
+      - ".github/workflows/android-host.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Prepare Godot project assets
+        run: |
+          mkdir -p android-host/app/src/main/assets
+          cp project.godot main.tscn main.gd hero.gd human.gd war.gd android-host/app/src/main/assets/
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build 32-bit APK, 64-bit APK and Play Store AAB
+        run: |
+          gradle -p android-host \
+            :app:assembleArm32Debug \
+            :app:assembleArm64Debug \
+            :app:bundlePlayRelease \
+            --no-daemon
+
+      - name: Prepare named artifacts
+        run: |
+          mkdir -p dist
+          cp android-host/app/build/outputs/apk/arm32/debug/*.apk dist/nightfall-android-32bit.apk
+          cp android-host/app/build/outputs/apk/arm64/debug/*.apk dist/nightfall-android-64bit.apk
+          cp android-host/app/build/outputs/bundle/playRelease/*.aab dist/nightfall-playstore.aab
+
+      - name: Upload APK 32 bits
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-android-32bit
+          path: dist/nightfall-android-32bit.apk
+          if-no-files-found: error
+
+      - name: Upload APK 64 bits
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-android-64bit
+          path: dist/nightfall-android-64bit.apk
+          if-no-files-found: error
+
+      - name: Upload AAB Play Store
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-playstore-aab
+          path: dist/nightfall-playstore.aab
+          if-no-files-found: error
