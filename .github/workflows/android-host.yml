@@ -38,15 +38,24 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Build debug APK and release App Bundle
+      - name: Build 32-bit APK, 64-bit APK and Play Store AAB
         run: |
-          gradle -p android-host :app:assembleDebug :app:bundleRelease --no-daemon
+          gradle -p android-host \
+            :app:assembleArm32Debug \
+            :app:assembleArm64Debug \
+            :app:bundlePlayRelease \
+            --no-daemon
+
+      - name: Prepare named artifacts
+        run: |
+          mkdir -p dist
+          cp android-host/app/build/outputs/apk/arm32/debug/*.apk dist/nightfall-android-32bit.apk
+          cp android-host/app/build/outputs/apk/arm64/debug/*.apk dist/nightfall-android-64bit.apk
+          cp android-host/app/build/outputs/bundle/playRelease/*.aab dist/nightfall-playstore.aab
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nightfall-android-multi-abi
-          path: |
-            android-host/app/build/outputs/apk/debug/*.apk
-            android-host/app/build/outputs/bundle/release/*.aab
+          name: nightfall-android-test-builds
+          path: dist/*
           if-no-files-found: error

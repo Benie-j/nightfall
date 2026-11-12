@@ -15,8 +15,35 @@ android {
         versionName = "0.1.0"
     }
 
-    // Conserver toutes les architectures fournies par les dépendances.
-    // Aucun abiFilters restrictif.
+    flavorDimensions += "abi"
+
+    productFlavors {
+        create("arm32") {
+            dimension = "abi"
+            ndk {
+                abiFilters += listOf("armeabi-v7a", "x86")
+            }
+        }
+
+        create("arm64") {
+            dimension = "abi"
+            ndk {
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
+        }
+
+        create("play") {
+            dimension = "abi"
+            ndk {
+                abiFilters += listOf(
+                    "armeabi-v7a",
+                    "arm64-v8a",
+                    "x86",
+                    "x86_64"
+                )
+            }
+        }
+    }
 
     packaging {
         jniLibs {
