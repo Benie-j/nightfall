@@ -38,12 +38,15 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Build debug APK
-        run: gradle -p android-host :app:assembleDebug --no-daemon
+      - name: Build debug APK and release App Bundle
+        run: |
+          gradle -p android-host :app:assembleDebug :app:bundleRelease --no-daemon
 
-      - name: Upload APK
+      - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nightfall-kotlin-godot-debug
-          path: android-host/app/build/outputs/apk/debug/app-debug.apk
+          name: nightfall-android-multi-abi
+          path: |
+            android-host/app/build/outputs/apk/debug/*.apk
+            android-host/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
