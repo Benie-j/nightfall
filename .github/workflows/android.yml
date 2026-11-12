@@ -18,6 +18,7 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: npm install
+      - run: cp node_modules/three/build/three.module.min.js www/
       - run: npx cap add android
       - name: Paysage et plein écran
         run: |
