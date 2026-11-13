@@ -449,7 +449,7 @@ func _process(delta: float) -> void:
 	wave_lbl.text = "VAGUE %d   SCORE %d" % [wave, score]
 	ind_t = maxf(0.0, ind_t - delta)
 	dmg_ind.visible = ind_t > 0.0
-	var gap := 6.0 + 16.0 * clampf(motion + sprint_amt, 0.0, 1.5) + 14.0 * weapon.kick_v
+	var gap: float = 6.0 + 16.0 * clampf(motion + sprint_amt, 0.0, 1.5) + 14.0 * weapon.kick_v
 	for it in cross:
 		var cr: ColorRect = it[0]
 		var dd: Vector2 = it[1]

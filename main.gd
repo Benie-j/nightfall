@@ -221,7 +221,7 @@ func _input(e) -> void:
 			look_delta += e.relative
 
 func _process(delta: float) -> void:
-	var sens := LOOK_SENS * (1.0 - 0.45 * war.ads_amt)
+	var sens: float = LOOK_SENS * (1.0 - 0.45 * war.ads_amt)
 	yaw -= look_delta.x * sens
 	pitch = clampf(pitch - look_delta.y * sens, -1.45, 1.45)
 	player.rotation.y = yaw
@@ -232,7 +232,7 @@ func _process(delta: float) -> void:
 	if war.dead:
 		v = Vector2.ZERO
 	# Course automatique : joystick poussé à fond, sans viser, tirer ni recharger
-	var want_sprint := v.length() > 0.92 and not crouching and not war.ads_held and not war.fire_held and war.reload_t <= 0.0
+	var want_sprint: bool = v.length() > 0.92 and not crouching and not war.ads_held and not war.fire_held and war.reload_t <= 0.0
 	sprint_k = lerpf(sprint_k, 1.0 if want_sprint else 0.0, minf(1.0, delta * 8.0))
 	var spd := WALK_SPEED + (SPRINT_SPEED - WALK_SPEED) * sprint_k
 	if crouching:
