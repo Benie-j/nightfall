@@ -52,6 +52,7 @@ jobs:
             exit 1
           fi
       - name: Test de démarrage (détecte les erreurs de script)
+        shell: bash
         run: |
           timeout 120 godot --headless --path . --quit-after 90 2>&1 | tee smoke.log || true
           if grep -E "SCRIPT ERROR|Parse Error|Failed to load script" smoke.log; then
