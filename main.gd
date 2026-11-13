@@ -136,7 +136,7 @@ func playing() -> bool:
 
 # ---------------------------------------------------------------- matériaux / textures
 
-func _noise_tex(freq: float, octaves: int) -> ImageTexture:
+func _noise_img(freq: float, octaves: int) -> Image:
 	var fn := FastNoiseLite.new()
 	fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	fn.frequency = freq
@@ -144,33 +144,53 @@ func _noise_tex(freq: float, octaves: int) -> ImageTexture:
 	var img: Image = fn.get_seamless_image(128, 128)
 	img.convert(Image.FORMAT_RGB8)
 	img.adjust_bcs(1.7, 1.0, 1.0)
-	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+	return img
 
-func _facade_tex() -> ImageTexture:
-	var s := 256
+func _tex_from(img: Image) -> ImageTexture:
+	var c: Image = img.duplicate()
+	c.generate_mipmaps()
+	return ImageTexture.create_from_image(c)
+
+func _normal_from(img: Image, strength: float) -> ImageTexture:
+	var n: Image = img.duplicate()
+	n.bump_map_to_normal_map(strength)
+	n.generate_mipmaps()
+	return ImageTexture.create_from_image(n)
+
+func _facade_img() -> Image:
+	var s := 512
 	var img := Image.create(s, s, false, Image.FORMAT_RGB8)
 	img.fill(Color(0.88, 0.86, 0.82))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
 	for cy in range(4):
 		for cx in range(4):
-			var x0: int = cx * 64 + 14
-			var y0: int = cy * 64 + 10
-			var shade: float = rng.randf_range(0.08, 0.2)
-			var col := Color(shade * 0.9, shade, shade * 1.15)
+			var ox: int = cx * 128
+			var oy: int = cy * 128
+			img.fill_rect(Rect2i(ox, oy, 128, 10), Color(0.70, 0.68, 0.64))
+			var wx: int = ox + 30
+			var wy: int = oy + 22
+			img.fill_rect(Rect2i(wx + 6, wy + 96, 56, 30), Color(0.77, 0.75, 0.71))
+			img.fill_rect(Rect2i(wx - 5, wy - 5, 78, 94), Color(0.66, 0.64, 0.60))
+			var shade: float = rng.randf_range(0.06, 0.18)
+			var glass := Color(shade * 0.9, shade, shade * 1.2)
 			var r: float = rng.randf()
 			if r < 0.10:
-				col = Color(0.85, 0.6, 0.28)
-			elif r < 0.22:
-				col = Color(0.02, 0.02, 0.02)
-			img.fill_rect(Rect2i(x0, y0, 36, 42), col)
-			img.fill_rect(Rect2i(x0 - 3, y0 - 3, 42, 3), Color(0.62, 0.6, 0.57))
-			img.fill_rect(Rect2i(x0 - 3, y0 + 42, 42, 3), Color(0.5, 0.48, 0.45))
-	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+				glass = Color(0.85, 0.6, 0.28)
+			elif r < 0.25:
+				glass = Color(0.015, 0.015, 0.015)
+			img.fill_rect(Rect2i(wx, wy, 68, 84), glass)
+			img.fill_rect(Rect2i(wx, wy, 68, 24), Color(glass.r * 1.4, glass.g * 1.4, glass.b * 1.4))
+			if r >= 0.25 and r < 0.35:
+				img.fill_rect(Rect2i(wx, wy, 24, 84), Color(0.45, 0.38, 0.30))
+			img.fill_rect(Rect2i(wx + 32, wy, 4, 84), Color(0.62, 0.60, 0.56))
+			img.fill_rect(Rect2i(wx, wy + 40, 68, 4), Color(0.62, 0.60, 0.56))
+			img.fill_rect(Rect2i(wx - 8, wy + 88, 84, 8), Color(0.80, 0.78, 0.74))
+			if rng.randf() < 0.12:
+				img.fill_rect(Rect2i(wx + 14, wy + 60, 40, 22), Color(0.5, 0.5, 0.5))
+	return img
 
-func _tex_mat(tex: Texture2D, tint: Color, scale: float, rough: float = 0.9, vcol: bool = false) -> StandardMaterial3D:
+func _tex_mat(tex: Texture2D, tint: Color, scale: float, rough: float = 0.9, vcol: bool = false, normal: Texture2D = null, nscale: float = 1.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_texture = tex
 	m.albedo_color = tint
@@ -179,6 +199,10 @@ func _tex_mat(tex: Texture2D, tint: Color, scale: float, rough: float = 0.9, vco
 	m.uv1_world_triplanar = true
 	m.uv1_scale = Vector3(scale, scale, scale)
 	m.vertex_color_use_as_albedo = vcol
+	if normal != null:
+		m.normal_enabled = true
+		m.normal_texture = normal
+		m.normal_scale = nscale
 	return m
 
 func _soft_tex() -> GradientTexture2D:
@@ -313,6 +337,7 @@ func _build_env() -> void:
 	env.fog_light_color = Color(0.72, 0.66, 0.58)
 	env.fog_density = 0.009
 	env.fog_sky_affect = 0.4
+	env.fog_sun_scatter = 0.2
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.tonemap_exposure = 1.0
 	env.tonemap_white = 6.0
@@ -426,6 +451,15 @@ func _cover(kind: int, pos: Vector3, rotated: bool, mats: Dictionary, soft: Text
 				fire.emission = Color(1.0, 0.45, 0.1)
 				fire.emission_energy_multiplier = 2.5
 				Gear.box(g, Vector3(0.45, 0.12, 0.45), Vector3(0, 0.95, 0), fire)
+	var aom := MeshInstance3D.new()
+	var aq := QuadMesh.new()
+	aq.size = Vector2(size.x + 2.4, size.z + 2.4)
+	aom.mesh = aq
+	aom.material_override = mats["ao"]
+	aom.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	aom.position = Vector3(0, 0.08, 0)
+	aom.rotation_degrees = Vector3(-90, 0, 0)
+	g.add_child(aom)
 	var bb_size := size
 	if rotated:
 		bb_size = Vector3(size.z, size.y, size.x)
@@ -438,21 +472,33 @@ func _cover(kind: int, pos: Vector3, rotated: bool, mats: Dictionary, soft: Text
 func _build_world() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20261113
-	var conc_tex := _noise_tex(0.05, 4)
-	var fine_tex := _noise_tex(0.11, 3)
-	var facade := _facade_tex()
+	var cimg := _noise_img(0.05, 4)
+	var fimg := _noise_img(0.11, 3)
+	var conc_tex := _tex_from(cimg)
+	var conc_n := _normal_from(cimg, 5.0)
+	var fine_tex := _tex_from(fimg)
+	var fine_n := _normal_from(fimg, 4.0)
+	var fac_img := _facade_img()
+	var facade := _tex_from(fac_img)
+	var facade_n := _normal_from(fac_img, 3.0)
 	var soft := _soft_tex()
+	var ao_m := StandardMaterial3D.new()
+	ao_m.albedo_texture = soft
+	ao_m.albedo_color = Color(0, 0, 0, 0.6)
+	ao_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ao_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	var mats: Dictionary = {
-		"conc": _tex_mat(conc_tex, Color(0.62, 0.60, 0.56), 0.25, 0.95),
-		"sand": _tex_mat(fine_tex, Color(0.66, 0.55, 0.38), 0.4, 1.0),
-		"rust": _tex_mat(fine_tex, Color(0.42, 0.24, 0.16), 0.3, 0.8),
-		"dark": _tex_mat(fine_tex, Color(0.16, 0.16, 0.17), 0.3, 0.7),
-		"wood": _tex_mat(fine_tex, Color(0.52, 0.40, 0.26), 0.5, 0.95),
-		"cont": _tex_mat(fine_tex, Color(0.24, 0.32, 0.28), 0.2, 0.7)
+		"conc": _tex_mat(conc_tex, Color(0.62, 0.60, 0.56), 0.25, 0.95, false, conc_n),
+		"sand": _tex_mat(fine_tex, Color(0.66, 0.55, 0.38), 0.4, 1.0, false, fine_n),
+		"rust": _tex_mat(fine_tex, Color(0.42, 0.24, 0.16), 0.3, 0.8, false, fine_n),
+		"dark": _tex_mat(fine_tex, Color(0.16, 0.16, 0.17), 0.3, 0.7, false, fine_n),
+		"wood": _tex_mat(fine_tex, Color(0.52, 0.40, 0.26), 0.5, 0.95, false, fine_n),
+		"cont": _tex_mat(fine_tex, Color(0.24, 0.32, 0.28), 0.2, 0.7, false, fine_n, 1.5),
+		"ao": ao_m
 	}
-	var m_ground := _tex_mat(conc_tex, Color(0.46, 0.44, 0.40), 0.12, 1.0)
-	var m_road := _tex_mat(fine_tex, Color(0.26, 0.26, 0.27), 0.2, 0.95)
-	var m_side := _tex_mat(conc_tex, Color(0.60, 0.58, 0.54), 0.3, 0.95)
+	var m_ground := _tex_mat(conc_tex, Color(0.46, 0.44, 0.40), 0.12, 1.0, false, conc_n)
+	var m_road := _tex_mat(fine_tex, Color(0.26, 0.26, 0.27), 0.2, 0.95, false, fine_n, 1.5)
+	var m_side := _tex_mat(conc_tex, Color(0.60, 0.58, 0.54), 0.3, 0.95, false, conc_n)
 	var m_line := Gear.mat(Color(0.62, 0.52, 0.14), 1.0)
 	var m_edge := Gear.mat(Color(0.55, 0.55, 0.52), 1.0)
 	# sol, route, trottoirs
@@ -471,9 +517,11 @@ func _build_world() -> void:
 	for i in range(51):
 		dash.set_instance_transform(i, Transform3D(Basis(), Vector3(0, 0.07, -200.0 + i * 8.0)))
 	# immeubles (un seul draw call)
-	var m_build := _tex_mat(facade, Color(1, 1, 1), 1.0 / 16.0, 0.9, true)
+	var m_build := _tex_mat(facade, Color(1, 1, 1), 1.0 / 16.0, 0.9, true, facade_n, 1.2)
 	var bm := _multimesh(_unit_box(), 136, m_build, true)
 	var bi := 0
+	var tf_list: Array[Transform3D] = []
+	var col_list: Array[Color] = []
 	for side in [-1, 1]:
 		for col in range(4):
 			for row in range(-8, 9):
@@ -485,8 +533,23 @@ func _build_world() -> void:
 				bm.set_instance_transform(bi, Transform3D(Basis().scaled(Vector3(30, h, 30)), Vector3(x, h * 0.5, z)))
 				bm.set_instance_color(bi, c)
 				bi += 1
+				var floors: int = int(h / 14.0)
+				if col <= 1:
+					for k in range(1, floors + 1):
+						tf_list.append(Transform3D(Basis().scaled(Vector3(31.2, 0.7, 31.2)), Vector3(x, k * 14.0, z)))
+						col_list.append(Color(tone * 0.8, tone * 0.78, tone * 0.74))
+				var rw: float = rng.randf_range(6.0, 12.0)
+				var rd: float = rng.randf_range(6.0, 12.0)
+				var rh: float = rng.randf_range(2.5, 6.0)
+				tf_list.append(Transform3D(Basis().scaled(Vector3(rw, rh, rd)), Vector3(x + rng.randf_range(-7.0, 7.0), h + rh * 0.5, z + rng.randf_range(-7.0, 7.0))))
+				col_list.append(Color(tone * 0.7, tone * 0.7, tone * 0.68))
 				if col == 0:
 					ray_boxes.append(AABB(Vector3(x - 15.0, 0.0, z - 15.0), Vector3(30.0, h, 30.0)))
+	var m_corn := _tex_mat(conc_tex, Color(0.7, 0.68, 0.64), 0.25, 0.95, true, conc_n)
+	var corn := _multimesh(_unit_box(), tf_list.size(), m_corn, true)
+	for i in range(tf_list.size()):
+		corn.set_instance_transform(i, tf_list[i])
+		corn.set_instance_color(i, col_list[i])
 	# lampadaires
 	var m_pole := Gear.mat(Color(0.07, 0.07, 0.07), 0.6, 0.5)
 	var m_bulb := StandardMaterial3D.new()
@@ -503,9 +566,9 @@ func _build_world() -> void:
 			bulbs.set_instance_transform(pi2, Transform3D(Basis(), Vector3(s * 11.2, 7.2, z2)))
 			pi2 += 1
 	# gravats sur la chaussée
-	var m_deb := _tex_mat(conc_tex, Color(0.55, 0.53, 0.5), 0.5, 1.0, true)
-	var deb := _multimesh(_unit_box(), 70, m_deb, true)
-	for i in range(70):
+	var m_deb := _tex_mat(conc_tex, Color(0.55, 0.53, 0.5), 0.5, 1.0, true, conc_n)
+	var deb := _multimesh(_unit_box(), 130, m_deb, true)
+	for i in range(130):
 		var sz := Vector3(rng.randf_range(0.2, 1.0), rng.randf_range(0.1, 0.5), rng.randf_range(0.2, 1.0))
 		var eb := Basis.from_euler(Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(0.0, TAU), rng.randf_range(-0.4, 0.4)))
 		var px: float = rng.randf_range(-9.5, 9.5)
@@ -514,6 +577,17 @@ func _build_world() -> void:
 		deb.set_instance_transform(i, Transform3D(eb.scaled(sz), Vector3(px, sz.y * 0.3, rng.randf_range(-195.0, 195.0))))
 		var gt: float = rng.randf_range(0.5, 1.0)
 		deb.set_instance_color(i, Color(gt, gt, gt))
+	# taches et traces au sol
+	for i in range(40):
+		var st := MeshInstance3D.new()
+		var sq := QuadMesh.new()
+		sq.size = Vector2(rng.randf_range(1.5, 5.0), rng.randf_range(1.0, 3.5))
+		st.mesh = sq
+		st.material_override = mats["ao"]
+		st.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		st.position = Vector3(rng.randf_range(-9.5, 9.5), 0.075, rng.randf_range(-190.0, 190.0))
+		st.rotation = Vector3(-PI * 0.5, 0.0, rng.randf_range(0.0, TAU))
+		add_child(st)
 	# couvertures
 	for i in range(47):
 		var z3: float = -186.0 + i * 8.0 + rng.randf_range(-2.0, 2.0)

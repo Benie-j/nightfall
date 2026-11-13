@@ -2,6 +2,9 @@ extends Node3D
 # NIGHTFALL_COD_LOOK — soldat ennemi (équipement tactique, animation de course, mort).
 
 const Gear = preload("res://gear.gd")
+const HeroScript = preload("res://hero.gd")
+
+var body = null
 
 var hp := 100.0
 var alive := true
@@ -19,7 +22,13 @@ var flash_t := 0.0
 var los := true
 var los_t := 0.0
 
-func build(kit: Dictionary) -> void:
+func build(kit: Dictionary, use_model: bool = false) -> void:
+	if use_model and ResourceLoader.exists("res://hero.glb"):
+		body = HeroScript.new()
+		add_child(body)
+		muzzle = body.tp_muzzle
+		_make_flash()
+		return
 	var uni: Material = kit["uniform"]
 	var vest: Material = kit["vest"]
 	var skin: Material = kit["skin"]
@@ -70,6 +79,9 @@ func build(kit: Dictionary) -> void:
 	Gear.limb(self, Vector3(0.28, 1.22, -0.02), Vector3(0.12, 1.2, -0.23), 0.08, uni)
 	Gear.limb(self, Vector3(-0.26, 1.5, 0), Vector3(-0.24, 1.24, -0.18), 0.09, uni)
 	Gear.limb(self, Vector3(-0.24, 1.24, -0.18), Vector3(0.11, 1.24, -0.55), 0.08, uni)
+	_make_flash()
+
+func _make_flash() -> void:
 	flash = MeshInstance3D.new()
 	var fs := SphereMesh.new()
 	fs.radius = 0.08
@@ -98,6 +110,10 @@ func animate(speed: float, delta: float) -> void:
 		flash_t -= delta
 		if flash_t <= 0.0:
 			flash.visible = false
+	if body != null:
+		body.set_aiming(los)
+		body.animate(speed, delta)
+		return
 	gait += delta * 10.0 * speed
 	var s: float = sin(gait) * 0.65 * clampf(speed, 0.0, 1.0)
 	leg_l.rotation.x = s

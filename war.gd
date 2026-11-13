@@ -262,9 +262,10 @@ func _spawn_wave() -> void:
 	banner = "VAGUE %d" % wave
 	banner_t = 3.2
 	var count: int = mini(4 + wave * 2, 14)
+	var models := 0
+	var hq: bool = int(game.settings["quality"]) >= 1
 	for i in range(count):
 		var e := SoldierScript.new()
-		e.build(kit)
 		var sgn: float = 1.0 if randf() < 0.5 else -1.0
 		var pz: float = clampf(player.position.z + sgn * randf_range(45.0, 75.0), -180.0, 180.0)
 		e.position = game.push_out(Vector3(randf_range(-7.0, 7.0), 0.0, pz), 0.5)
@@ -273,6 +274,10 @@ func _spawn_wave() -> void:
 		e.cd = randf_range(1.0, 3.0)
 		e.strafe_dir = 1.0 if randf() < 0.5 else -1.0
 		add_child(e)
+		var use_model: bool = hq and models < 8
+		if use_model:
+			models += 1
+		e.build(kit, use_model)
 		enemies.append(e)
 
 func _update_enemies(dt: float) -> void:
