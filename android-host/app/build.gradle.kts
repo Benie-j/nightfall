@@ -68,5 +68,6 @@ android {
 dependencies {
     implementation("org.godotengine:godot:4.3.0.stable")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.fragment:fragment-ktx:1.7.1")
 }

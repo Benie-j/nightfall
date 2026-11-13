@@ -1,24 +1,9 @@
-name: Android Host (Kotlin + Godot)
+name: Nightfall Android Host
 
 on:
   push:
     branches:
       - feat/visual-rework
-      - migration/kotlin-godot
-    paths:
-      - "project.godot"
-      - "*.gd"
-      - "*.glb"
-      - "*.jpg"
-      - "*.png"
-      - "*.tscn"
-      - "*.import"
-      - "*.uid"
-      - "*.tres"
-      - "*.res"
-      - "assets/**"
-      - "android-host/**"
-      - ".github/workflows/android-host.yml"
   workflow_dispatch:
 
 permissions:
@@ -28,95 +13,97 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container: barichello/godot-ci:4.3
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Importer le projet Godot 4.3
+      - name: Importer les ressources Godot
         shell: bash
         run: |
           set -euo pipefail
           godot --version
           godot --headless --editor --path . --import
 
-          test -d .godot/imported || {
-            echo "Dossier .godot/imported absent après import"
-            exit 1
-          }
+          test -d .godot/imported
+          find .godot/imported -type f -print -quit | grep -q .
 
-          find .godot/imported -type f -print -quit | grep -q . || {
-            echo "Aucune ressource importée par Godot"
-            exit 1
-          }
-
-      - name: Prepare Godot project assets
+      - name: Préparer le projet Godot dans les assets Android
         shell: bash
         run: |
           set -euo pipefail
-          DEST="android-host/app/src/main/assets"
+
+          DEST="$GITHUB_WORKSPACE/android-host/app/src/main/assets"
+
+          rm -rf "$DEST"
           mkdir -p "$DEST"
 
-          # Éviter de conserver des ressources d'une ancienne exécution.
-          find "$DEST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          # Copier les fichiers du jeu en conservant leur arborescence.
+          # Exclure les fichiers Git, CI, Android et les sauvegardes.
+          tar \
+            --exclude='./.git' \
+            --exclude='./.github' \
+            --exclude='./android-host' \
+            --exclude='./backups' \
+            --exclude='./dist' \
+            --exclude='./build' \
+            --exclude='./.godot/editor' \
+            --exclude='./.godot/shader_cache' \
+            --exclude='./.godot/mono' \
+            --exclude='./.godot/imported' \
+            -cf - . | tar -xf - -C "$DEST"
 
-          cp project.godot main.tscn "$DEST/"
-
-          # Sources, métadonnées d'import et identifiants Godot.
-          find . -maxdepth 1 -type f \
-            \( -name '*.gd' -o -name '*.glb' \
-            -o -name '*.jpg' -o -name '*.png' \
-            -o -name '*.tres' -o -name '*.res' \
-            -o -name '*.import' -o -name '*.uid' \) \
-            -exec cp -t "$DEST" {} +
-
-          # Ressources importées par Godot 4.3.
+          # Les ressources importées sont indispensables au chargement.
           mkdir -p "$DEST/.godot/imported"
           cp -a .godot/imported/. "$DEST/.godot/imported/"
-
-          if [ -f .godot/uid_cache.bin ]; then
-            cp .godot/uid_cache.bin "$DEST/.godot/"
-          fi
-
-          if [ -d assets ]; then
-            cp -a assets "$DEST/"
-          fi
-
-          find "$DEST/.godot/imported" -type f -print -quit | grep -q . || {
-            echo "Les ressources importées ne sont pas présentes dans les assets Android"
-            exit 1
-          }
 
           for f in project.godot main.tscn main.gd war.gd \
                    hero.gd human.gd weapon.gd hero.glb; do
             test -s "$DEST/$f" || {
-              echo "Ressource manquante : $f"
+              echo "Fichier Godot manquant : $f"
               exit 1
             }
           done
 
-      - name: Set up Gradle
+          find "$DEST/.godot/imported" -type f -print -quit | grep -q .
+
+          echo "Projet Godot correctement préparé dans les assets Android."
+
+      - name: Configurer Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
-      - name: Build 32-bit APK, 64-bit APK and Play Store AAB
+      - name: Vérifier l'environnement Android
+        shell: bash
         run: |
+          set -euo pipefail
+          java -version
+          gradle --version
+          test -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+
+      - name: Compiler les APK ARM32, ARM64 et AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+
           gradle -p android-host \
             :app:assembleArm32Debug \
             :app:assembleArm64Debug \
             :app:bundlePlayRelease \
             --no-daemon
 
-      - name: Prepare named artifacts
+      - name: Préparer les artefacts
         shell: bash
         run: |
           set -euo pipefail
+
           mkdir -p dist
 
           cp android-host/app/build/outputs/apk/arm32/debug/*.apk \
@@ -126,29 +113,29 @@ jobs:
             dist/nightfall-android-64bit.apk
 
           cp android-host/app/build/outputs/bundle/playRelease/*.aab \
-            dist/nightfall-playstore.aab
+            dist/nightfall-playstore-unsigned.aab
 
           test -s dist/nightfall-android-32bit.apk
           test -s dist/nightfall-android-64bit.apk
-          test -s dist/nightfall-playstore.aab
+          test -s dist/nightfall-playstore-unsigned.aab
 
-      - name: Upload APK 32 bits
+      - name: Publier APK ARM32
         uses: actions/upload-artifact@v4
         with:
           name: nightfall-android-32bit
           path: dist/nightfall-android-32bit.apk
           if-no-files-found: error
 
-      - name: Upload APK 64 bits
+      - name: Publier APK ARM64
         uses: actions/upload-artifact@v4
         with:
           name: nightfall-android-64bit
           path: dist/nightfall-android-64bit.apk
           if-no-files-found: error
 
-      - name: Upload AAB Play Store
+      - name: Publier AAB non signé
         uses: actions/upload-artifact@v4
         with:
-          name: nightfall-playstore-aab
-          path: dist/nightfall-playstore.aab
+          name: nightfall-playstore-aab-unsigned
+          path: dist/nightfall-playstore-unsigned.aab
           if-no-files-found: error
