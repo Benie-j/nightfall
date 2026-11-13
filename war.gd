@@ -115,7 +115,7 @@ func _diag() -> String:
 	if body_ref.fallback != null:
 		return "Modèle : secours (capsules) - hero.glb non chargé"
 	if body_ref.skeleton == null:
-		return "Modèle : hero.glb ÉCHEC (aucun squelette)"
+		return "Modèle : hero.glb ÉCHEC - " + str(body_ref.load_status)
 	return "Modèle : hero.glb OK - os reconnus %d/16" % body_ref.bone_ids.size()
 
 func _label(text: String, size: int, align: int) -> Label:

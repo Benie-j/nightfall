@@ -1,6 +1,7 @@
 extends Node3D
 
 var skeleton: Skeleton3D
+var load_status := "inconnu"
 var fallback = null
 
 var bone_ids: Dictionary = {}
@@ -56,11 +57,13 @@ func _ready() -> void:
 	var packed := load("res://hero.glb") as PackedScene
 	if packed == null:
 		push_error("NIGHTFALL : impossible de charger hero.glb.")
+		load_status = "import echoue (load a renvoye null)"
 		return
 
 	var model := packed.instantiate() as Node3D
 	if model == null:
 		push_error("NIGHTFALL : le modèle GLB n'est pas un Node3D.")
+		load_status = "racine non Node3D"
 		return
 
 	var holder := Node3D.new()
@@ -89,6 +92,7 @@ func _ready() -> void:
 
 	if first or bounds.size.y <= 0.001:
 		push_error("NIGHTFALL : dimensions du modèle invalides.")
+		load_status = "aucun mesh / dimensions invalides"
 		return
 
 	var scale_factor := 1.8 / bounds.size.y
@@ -102,6 +106,7 @@ func _ready() -> void:
 
 	if skeleton == null:
 		push_error("NIGHTFALL : aucun Skeleton3D trouvé dans hero.glb.")
+		load_status = "modele charge mais sans Skeleton3D"
 		return
 
 	# Mémorisation des poses initiales pour éviter leur accumulation
