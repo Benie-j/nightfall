@@ -1,0 +1,49 @@
+{
+  "title": "NIGHTFALL — LES OMBRES DE YOPOUGON",
+  "year": 2031,
+  "genre": "Campagne solo · FPS tactique · Thriller militaire fictif",
+  "synopsis": [
+    "2031.",
+    "Yopougon. Une nuit apparemment ordinaire.",
+    "Depuis plusieurs semaines, des cargaisons disparaissent dans la zone industrielle. Des communications sont interceptées. Des véhicules circulent la nuit sans immatriculation. Personne ne comprend comment un réseau clandestin arrive à opérer sans laisser de traces.",
+    "Une nuit, une attaque coordonnée frappe plusieurs infrastructures stratégiques d'Abidjan.",
+    "Les autorités découvrent progressivement que ces événements sont liés à une organisation clandestine appelée NIGHTFALL.",
+    "Son objectif : provoquer une crise nationale, prendre le contrôle de certaines infrastructures et déstabiliser le pays.",
+    "Tu incarnes un ancien militaire ivoirien, rappelé discrètement pour une opération qui devait durer quelques heures.",
+    "Mais à Yopougon, tout dérape.",
+    "Ton équipe est compromise. Les communications sont coupées. Tu te retrouves isolé dans une ville que tu connais, mais qui ne ressemble plus à celle que tu as quittée.",
+    "Et tu découvres que quelqu'un, à l'intérieur du dispositif de sécurité, aide l'organisation."
+  ],
+  "missions": [
+    {
+      "id": 1,
+      "title": "Nuit noire à Siporex",
+      "description": "Une explosion interrompt la circulation. Tu dois retrouver ton contact, évacuer des civils et récupérer un téléphone contenant des informations confidentielles."
+    },
+    {
+      "id": 2,
+      "title": "Les ruelles de Sicogi",
+      "description": "Tu traverses des rues résidentielles, des cours et des passages étroits. Tu dois retrouver un informateur avant que le réseau ne le fasse taire."
+    },
+    {
+      "id": 3,
+      "title": "Zone rouge",
+      "description": "Dans le secteur de Ficgayo et Saint-André, tu dois identifier les membres d'une cellule clandestine sans mettre les habitants en danger."
+    },
+    {
+      "id": 4,
+      "title": "Le traître",
+      "description": "Une opération à Niangon révèle que les informations de ton équipe sont transmises à l'ennemi. Tu dois découvrir qui est responsable."
+    },
+    {
+      "id": 5,
+      "title": "Point de rupture",
+      "description": "L'enquête conduit vers Azito. Tu dois empêcher une opération contre une infrastructure stratégique."
+    },
+    {
+      "id": 6,
+      "title": "Nightfall",
+      "description": "Tu découvres le véritable commanditaire. Une dernière opération doit mettre fin au réseau, mais la décision finale pourrait bouleverser toute la suite de l'histoire."
+    }
+  ]
+}

@@ -74,6 +74,7 @@ var kick := 0.0
 var sway := Vector2.ZERO
 var hurt_flash := 0.0
 var key_move := Vector2.ZERO
+var narrative_active := false
 
 # ---------------------------------------------------------------- réglages
 
@@ -132,7 +133,7 @@ func toggle_view() -> void:
 	save_settings()
 
 func playing() -> bool:
-	return hud != null and hud.menu == 0
+	return hud != null and hud.menu == 0 and not narrative_active
 
 # ---------------------------------------------------------------- matériaux / textures
 
@@ -738,13 +739,21 @@ func _ready() -> void:
 	hl.add_child(hud)
 	hud.reload_pressed.connect(func(): war.start_reload())
 	hud.view_pressed.connect(toggle_view)
-	hud.start_pressed.connect(func(): fx.start_ambient())
+	hud.start_pressed.connect(_start_campaign_intro)
 	hud.restart_pressed.connect(restart)
 	apply_quality()
 	apply_view()
 	_update_camera(0.016)
 
+
+func _start_campaign_intro() -> void:
+	fx.start_ambient()
+	narrative_active = true
+	hud.start_intro()
+
 func restart() -> void:
+	narrative_active = false
+	hud.intro_active = false
 	war.reset()
 	player.position = Vector3.ZERO
 	yaw = 0.0

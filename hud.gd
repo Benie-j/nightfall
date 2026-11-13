@@ -15,6 +15,43 @@ var ads_on := false
 var menu := 1
 var first_menu := true
 
+var intro_active := false
+var intro_pages: Array[String] = []
+var intro_index := 0
+
+func start_intro() -> void:
+	intro_pages = Story.intro_pages()
+	intro_index = 0
+	intro_active = true
+	game.narrative_active = true
+	release_all()
+	queue_redraw()
+
+func advance_intro() -> void:
+	if not intro_active:
+		return
+	intro_index += 1
+	if intro_index >= intro_pages.size():
+		intro_active = false
+		game.narrative_active = false
+		release_all()
+	queue_redraw()
+
+func _draw_intro(s: Vector2) -> void:
+	draw_rect(Rect2(Vector2.ZERO, s), Color(0.005, 0.008, 0.012, 0.94))
+	var h := s.y
+	var title := Story.intro_title()
+	_ctext("2031  //  ABIDJAN — CÔTE D'IVOIRE", Vector2(s.x * 0.5, h * 0.17), int(h * 0.027), Color(0.85, 0.68, 0.42, 0.9))
+	_ctext(title, Vector2(s.x * 0.5, h * 0.29), int(h * 0.045), Color(0.88, 0.16, 0.12, 1.0))
+	draw_line(Vector2(s.x * 0.18, h * 0.36), Vector2(s.x * 0.82, h * 0.36), Color(0.75, 0.15, 0.12, 0.75), 2.0)
+	var page := intro_pages[intro_index] if intro_index < intro_pages.size() else ""
+	var font := ThemeDB.fallback_font
+	var fs := int(clampf(h * 0.035, 17.0, 30.0))
+	draw_multiline_string(font, Vector2(s.x * 0.12, h * 0.49), page, HORIZONTAL_ALIGNMENT_CENTER, s.x * 0.76, fs, 8, Color(0.94, 0.94, 0.92, 1.0))
+	_ctext("%02d / %02d" % [intro_index + 1, intro_pages.size()], Vector2(s.x * 0.5, h * 0.84), int(h * 0.024), Color(0.8, 0.8, 0.8, 0.7))
+	_ctext("TOUCHER POUR CONTINUER", Vector2(s.x * 0.5, h * 0.91), int(h * 0.027), Color(1.0, 0.72, 0.28, 0.95))
+
+
 var move_idx := -1
 var look_idx := -1
 var fire_idx := -1
@@ -24,6 +61,7 @@ var menu_rects: Array[Rect2] = []
 var menu_ids: Array[String] = []
 
 const QUAL := ["BASSE", "MOYENNE", "HAUTE"]
+const Story = preload("res://story.gd")
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -66,6 +104,18 @@ func _process(_delta: float) -> void:
 # ---------------------------------------------------------------- entrées tactiles
 
 func _input(e: InputEvent) -> void:
+	if intro_active:
+		if e is InputEventScreenTouch and (e as InputEventScreenTouch).pressed:
+			advance_intro()
+			get_viewport().set_input_as_handled()
+		elif e is InputEventMouseButton and (e as InputEventMouseButton).pressed:
+			advance_intro()
+			get_viewport().set_input_as_handled()
+		elif e is InputEventKey and (e as InputEventKey).pressed and not (e as InputEventKey).echo:
+			if (e as InputEventKey).keycode in [KEY_ENTER, KEY_SPACE]:
+				advance_intro()
+				get_viewport().set_input_as_handled()
+		return
 	if e is InputEventScreenTouch:
 		var t := e as InputEventScreenTouch
 		if t.pressed:
@@ -175,6 +225,8 @@ func _draw() -> void:
 	var s := _vs()
 	if menu == 0:
 		_draw_game(s)
+		if intro_active:
+			_draw_intro(s)
 	else:
 		_draw_menu(s)
 
