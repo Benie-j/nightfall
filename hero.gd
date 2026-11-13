@@ -56,8 +56,10 @@ func _ready() -> void:
 
 	var packed := load("res://hero.glb") as PackedScene
 	if packed == null:
-		push_error("NIGHTFALL : impossible de charger hero.glb.")
-		load_status = "import echoue (load a renvoye null)"
+		load_status = "import GLB indisponible - personnage de secours"
+		push_warning("NIGHTFALL : hero.glb non charge, activation du personnage de secours.")
+		fallback = preload("res://human.gd").new()
+		add_child(fallback)
 		return
 
 	var model := packed.instantiate() as Node3D

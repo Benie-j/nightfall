@@ -24,6 +24,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Node.js pour la conversion glTF
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Installer Android SDK 35
         shell: bash
         run: |
@@ -95,15 +100,46 @@ jobs:
           echo "Ressources téléchargées :"
           du -h "$DEST"/*
 
-      - name: Importer les ressources Godot
+      - name: Convertir les modèles glTF pour Godot 4.3
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm install --no-save --no-package-lock \\
+            @gltf-transform/core@4 \\
+            @gltf-transform/extensions@4 \\
+            @gltf-transform/functions@4 \\
+            meshoptimizer@0.22.0
+
+          find . -type f -name '*.glb' ! -path './backups/*' -print0 |
+          while IFS= read -r -d '' model; do
+            echo "Conversion glTF : $model"
+            node tools/convert_gltf_for_godot.mjs "$model"
+          done
+
+      - name: Importer et vérifier les ressources Godot
         shell: bash
         run: |
           set -euo pipefail
           godot --version
-          godot --headless --editor --path . --import
+
+          # Les anciennes sauvegardes ne font pas partie du jeu.
+          if [ -d backups ]; then
+            touch backups/.gdignore
+          fi
+
+          set -o pipefail
+          godot --headless --editor --path . --import 2>&1 | tee godot-import.log
+
+          if grep -E 'ERROR: GLTF:|ERROR: Error importing|ERROR: Failed loading resource|SCRIPT ERROR:|Failed to load script' godot-import.log; then
+            echo "Échec de l'importation ou de l'analyse du projet Godot."
+            exit 1
+          fi
 
           test -d .godot/imported
           find .godot/imported -type f -print -quit | grep -q .
+
+          godot --headless --path . --script ci/validate_gltf_imports.gd
 
       - name: Préparer le projet Godot dans les assets Android
         shell: bash
