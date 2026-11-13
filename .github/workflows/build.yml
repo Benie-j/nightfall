@@ -43,6 +43,7 @@ jobs:
           export/android/debug_keystore_pass = "android"
           EOF2
       - name: Import
+        shell: bash
         run: |
           set -euo pipefail
           godot --headless --import 2>&1 | tee godot-import.log
