@@ -12,6 +12,10 @@ on:
       - "*.jpg"
       - "*.png"
       - "*.tscn"
+      - "*.import"
+      - "*.uid"
+      - "*.tres"
+      - "*.res"
       - "assets/**"
       - "android-host/**"
       - ".github/workflows/android-host.yml"
@@ -23,6 +27,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: barichello/godot-ci:4.3
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,6 +38,23 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Importer le projet Godot 4.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --version
+          godot --headless --editor --path . --import
+
+          test -d .godot/imported || {
+            echo "Dossier .godot/imported absent après import"
+            exit 1
+          }
+
+          find .godot/imported -type f -print -quit | grep -q . || {
+            echo "Aucune ressource importée par Godot"
+            exit 1
+          }
+
       - name: Prepare Godot project assets
         shell: bash
         run: |
@@ -40,17 +62,35 @@ jobs:
           DEST="android-host/app/src/main/assets"
           mkdir -p "$DEST"
 
+          # Éviter de conserver des ressources d'une ancienne exécution.
+          find "$DEST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
           cp project.godot main.tscn "$DEST/"
 
+          # Sources, métadonnées d'import et identifiants Godot.
           find . -maxdepth 1 -type f \
             \( -name '*.gd' -o -name '*.glb' \
             -o -name '*.jpg' -o -name '*.png' \
-            -o -name '*.tres' -o -name '*.res' \) \
+            -o -name '*.tres' -o -name '*.res' \
+            -o -name '*.import' -o -name '*.uid' \) \
             -exec cp -t "$DEST" {} +
+
+          # Ressources importées par Godot 4.3.
+          mkdir -p "$DEST/.godot/imported"
+          cp -a .godot/imported/. "$DEST/.godot/imported/"
+
+          if [ -f .godot/uid_cache.bin ]; then
+            cp .godot/uid_cache.bin "$DEST/.godot/"
+          fi
 
           if [ -d assets ]; then
             cp -a assets "$DEST/"
           fi
+
+          find "$DEST/.godot/imported" -type f -print -quit | grep -q . || {
+            echo "Les ressources importées ne sont pas présentes dans les assets Android"
+            exit 1
+          }
 
           for f in project.godot main.tscn main.gd war.gd \
                    hero.gd human.gd weapon.gd hero.glb; do
