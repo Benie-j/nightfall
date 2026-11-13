@@ -1,0 +1,8 @@
+© OpenStreetMap contributors
+https://www.openstreetmap.org/copyright
+
+OpenStreetMap data is licensed under the Open
+Database License (ODbL).
+
+The map data must be attributed and derivative
+database obligations must be respected.

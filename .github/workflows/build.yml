@@ -8,6 +8,25 @@ jobs:
     container: barichello/godot-ci:4.3
     steps:
       - uses: actions/checkout@v4
+      - name: Installer Python pour la carte
+        run: |
+          apt-get update
+          apt-get install -y python3
+
+      - name: Extraire les données de Yopougon
+        run: |
+          set -euo pipefail
+          python3 tools/build_yopougon_map.py
+          test -s data/yopougon_siporex_ficgayo.json
+
+      - name: Publier les données cartographiques
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-yopougon-map-source
+          path: |
+            data/yopougon_siporex_ficgayo.json
+            data/OPENSTREETMAP_ATTRIBUTION.txt
+
       - name: Setup
         run: |
           mkdir -p ~/.local/share/godot/export_templates ~/.config/godot build
@@ -23,7 +42,13 @@ jobs:
           export/android/debug_keystore_pass = "android"
           EOF2
       - name: Import
-        run: godot --headless --import || true
+        run: |
+          set -euo pipefail
+          godot --headless --import 2>&1 | tee godot-import.log
+          if grep -E "ERROR: GLTF:|ERROR: Error importing|SCRIPT ERROR:|Parse Error" godot-import.log; then
+            echo "Importation Godot invalide."
+            exit 1
+          fi
       - name: Test de démarrage (détecte les erreurs de script)
         run: |
           timeout 120 godot --headless --path . --quit-after 90 2>&1 | tee smoke.log || true

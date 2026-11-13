@@ -1,0 +1,39 @@
+{
+  "id": "mission_01",
+  "title": "Les ombres de Yopougon",
+  "subtitle": "Nuit noire à Siporex",
+  "location": "Siporex-Ficgayo",
+  "city": "Abidjan",
+  "country": "Côte d'Ivoire",
+  "year": 2031,
+  "genre": "fictional_military_thriller",
+  "player_character": "main_avatar",
+  "objectives": [
+    {
+      "id": "reach_siporex",
+      "title": "Rejoindre la gare de Siporex",
+      "type": "reach"
+    },
+    {
+      "id": "find_contact",
+      "title": "Retrouver l'informateur",
+      "type": "interact"
+    },
+    {
+      "id": "reach_figayo",
+      "title": "Traverser vers Ficgayo",
+      "type": "reach"
+    },
+    {
+      "id": "recover_evidence",
+      "title": "Récupérer la preuve numérique",
+      "type": "collect"
+    },
+    {
+      "id": "escort_civilians",
+      "title": "Escorter les civils",
+      "type": "escort"
+    }
+  ],
+  "ending": "Une preuve révèle que NIGHTFALL prépare une opération plus vaste à Abidjan."
+}
