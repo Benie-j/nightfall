@@ -11,7 +11,52 @@ jobs:
       - name: Installer Python pour la carte
         run: |
           apt-get update
-          apt-get install -y python3
+          apt-get install -y python3 curl
+
+      - name: Télécharger et vérifier les modèles 3D
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://raw.githubusercontent.com/cktang88/3d-fps/130ac2a5c856401ec36e7d35afcfefe40c5801f4/public/assets"
+          mkdir -p assets/external
+
+          curl -fL --retry 3 "$BASE/models/characters/soldier.glb" -o assets/external/soldier.glb
+          curl -fL --retry 3 "$BASE/models/fp/m4a1.glb" -o assets/external/m4a1_fp.glb
+          curl -fL --retry 3 "$BASE/models/props/covered_car/covered_car.glb" -o assets/external/covered_car.glb
+
+          python3 - <<'PYMODEL'
+          import json, struct
+          from pathlib import Path
+
+          for p in map(Path, [
+              "assets/external/soldier.glb",
+              "assets/external/m4a1_fp.glb",
+              "assets/external/covered_car.glb"
+          ]):
+              d = p.read_bytes()
+              if len(d) < 20:
+                  raise SystemExit(f"Fichier invalide : {p}")
+              magic, version, total = struct.unpack_from("<4sII", d)
+              length, kind = struct.unpack_from("<II", d, 12)
+              if magic != b"glTF" or version != 2 or total != len(d) or kind != 0x4E4F534A:
+                  raise SystemExit(f"GLB invalide : {p}")
+              doc = json.loads(d[20:20+length].decode("utf-8").rstrip(" \\t\\r\\n\\0"))
+              skins = len(doc.get("skins", []))
+              animations = [a.get("name", "?") for a in doc.get("animations", [])]
+              if p.name == "soldier.glb" and skins == 0:
+                  raise SystemExit("Le soldat n'a pas de squelette.")
+              print(f"OK {p}: {len(d)} octets, {skins} squelette(s), animations={animations}")
+          PYMODEL
+
+          cat > assets/external/ASSET_CREDITS.txt <<'EOF'
+          Ressources NIGHTFALL
+          Source : cktang88/3d-fps
+          Commit : 130ac2a5c856401ec36e7d35afcfefe40c5801f4
+          soldier.glb : BAMEN - CC BY 4.0
+          m4a1_fp.glb : Firewarden / bumstrum - CC BY 4.0
+          covered_car.glb : Poly Haven - CC0
+          https://github.com/cktang88/3d-fps
+          EOF
 
       - name: Extraire les données de Yopougon
         shell: bash
