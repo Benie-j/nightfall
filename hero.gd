@@ -190,3 +190,13 @@ func animate(amount: float, delta: float) -> void:
 		Vector3.RIGHT,
 		breathing - 0.06 * aim_weight
 	)
+
+func set_shadow_only(on: bool) -> void:
+	# Vue subjective : le corps ne s'affiche plus, il projette seulement son ombre.
+	var list: Array = []
+	_meshes(self, list)
+	for m in list:
+		(m as GeometryInstance3D).cast_shadow = (
+			GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if on
+			else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		)

@@ -1,5 +1,8 @@
 name: APK
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches: [feat/visual-rework]
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest

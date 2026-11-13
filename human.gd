@@ -59,11 +59,11 @@ func _ready() -> void:
 	_part(_cap(0.05, 0.14), skin, Vector3(0, 1.52, 0))
 	# Tete + visage
 	_part(_sph(0.11), skin, Vector3(0, 1.66, 0)).scale = Vector3(1.0, 1.2, 1.0)
-	if ResourceLoader.exists("res://perso.png"):
+	if ResourceLoader.exists("res://perso.jpg"):
 		var q := QuadMesh.new()
 		q.size = Vector2(0.2, 0.24)
 		var fm := StandardMaterial3D.new()
-		fm.albedo_texture = load("res://perso.png")
+		fm.albedo_texture = load("res://perso.jpg")
 		fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		fm.uv1_scale = Vector3(0.5, 0.55, 1)
 		fm.uv1_offset = Vector3(0.235, 0.15, 0)
