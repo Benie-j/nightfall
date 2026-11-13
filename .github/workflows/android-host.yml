@@ -76,8 +76,12 @@ jobs:
             local source="$1"
             local target="$2"
             echo "Téléchargement : $target"
-            curl --fail --location --silent --show-error --retry 3 \
-              "$BASE/$source" -o "$DEST/$target"
+            local tmp="$DEST/$target.part"
+            rm -f "$tmp"
+            wget --quiet --tries=3 --timeout=60 \
+              --output-document="$tmp" "$BASE/$source"
+            test -s "$tmp"
+            mv "$tmp" "$DEST/$target"
             test -s "$DEST/$target"
           }
 
