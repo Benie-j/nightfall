@@ -3,11 +3,16 @@ name: Android Host (Kotlin + Godot)
 on:
   push:
     branches:
+      - feat/visual-rework
       - migration/kotlin-godot
     paths:
       - "project.godot"
       - "*.gd"
-      - "main.tscn"
+      - "*.glb"
+      - "*.jpg"
+      - "*.png"
+      - "*.tscn"
+      - "assets/**"
       - "android-host/**"
       - ".github/workflows/android-host.yml"
   workflow_dispatch:
@@ -29,9 +34,31 @@ jobs:
           java-version: "17"
 
       - name: Prepare Godot project assets
+        shell: bash
         run: |
-          mkdir -p android-host/app/src/main/assets
-          cp project.godot main.tscn main.gd hero.gd human.gd war.gd android-host/app/src/main/assets/
+          set -euo pipefail
+          DEST="android-host/app/src/main/assets"
+          mkdir -p "$DEST"
+
+          cp project.godot main.tscn "$DEST/"
+
+          find . -maxdepth 1 -type f \
+            \( -name '*.gd' -o -name '*.glb' \
+            -o -name '*.jpg' -o -name '*.png' \
+            -o -name '*.tres' -o -name '*.res' \) \
+            -exec cp -t "$DEST" {} +
+
+          if [ -d assets ]; then
+            cp -a assets "$DEST/"
+          fi
+
+          for f in project.godot main.tscn main.gd war.gd \
+                   hero.gd human.gd weapon.gd hero.glb; do
+            test -s "$DEST/$f" || {
+              echo "Ressource manquante : $f"
+              exit 1
+            }
+          done
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -47,11 +74,23 @@ jobs:
             --no-daemon
 
       - name: Prepare named artifacts
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist
-          cp android-host/app/build/outputs/apk/arm32/debug/*.apk dist/nightfall-android-32bit.apk
-          cp android-host/app/build/outputs/apk/arm64/debug/*.apk dist/nightfall-android-64bit.apk
-          cp android-host/app/build/outputs/bundle/playRelease/*.aab dist/nightfall-playstore.aab
+
+          cp android-host/app/build/outputs/apk/arm32/debug/*.apk \
+            dist/nightfall-android-32bit.apk
+
+          cp android-host/app/build/outputs/apk/arm64/debug/*.apk \
+            dist/nightfall-android-64bit.apk
+
+          cp android-host/app/build/outputs/bundle/playRelease/*.aab \
+            dist/nightfall-playstore.aab
+
+          test -s dist/nightfall-android-32bit.apk
+          test -s dist/nightfall-android-64bit.apk
+          test -s dist/nightfall-playstore.aab
 
       - name: Upload APK 32 bits
         uses: actions/upload-artifact@v4

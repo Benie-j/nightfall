@@ -21,14 +21,14 @@ android {
         create("arm32") {
             dimension = "abi"
             ndk {
-                abiFilters += listOf("armeabi-v7a", "x86")
+                abiFilters += listOf("armeabi-v7a")
             }
         }
 
         create("arm64") {
             dimension = "abi"
             ndk {
-                abiFilters += listOf("arm64-v8a", "x86_64")
+                abiFilters += listOf("arm64-v8a")
             }
         }
 
