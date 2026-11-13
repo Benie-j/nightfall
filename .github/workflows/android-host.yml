@@ -24,6 +24,20 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Installer Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          yes | sdkmanager --sdk_root="${ANDROID_HOME}" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
+
+          sdkmanager --list_installed
+
+
       - name: Importer les ressources Godot
         shell: bash
         run: |
