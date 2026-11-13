@@ -1,0 +1,252 @@
+name: Nightfall Android Host
+
+on:
+  push:
+    branches:
+      - feat/visual-rework
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: barichello/godot-ci:4.3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Node.js pour la conversion glTF
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Installer Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "${ANDROID_HOME}" || {
+            echo "ANDROID_HOME absent."
+            exit 1
+          }
+
+          SDKMANAGER="$(command -v sdkmanager)"
+          test -n "${SDKMANAGER}"
+
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+
+          # Éviter SIGPIPE de yes tout en vérifiant le résultat sdkmanager.
+          set +o pipefail
+          license_status=0
+          yes | "${SDKMANAGER}" --sdk_root="${ANDROID_HOME}" --licenses || license_status=$?
+          set -o pipefail
+
+          if [[ "${license_status}" -ne 0 ]]; then
+            echo "Échec de l'acceptation des licences."
+            exit "${license_status}"
+          fi
+
+          "${SDKMANAGER}" --sdk_root="${ANDROID_HOME}" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools" </dev/null
+
+          test -d "${ANDROID_HOME}/platforms/android-35"
+          test -d "${ANDROID_HOME}/build-tools/35.0.0"
+          test -x "${ANDROID_HOME}/platform-tools/adb"
+
+          "${SDKMANAGER}" --sdk_root="${ANDROID_HOME}" --list_installed
+
+
+      - name: Télécharger les ressources 3D et textures
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="https://raw.githubusercontent.com/cktang88/3d-fps/130ac2a5c856401ec36e7d35afcfefe40c5801f4/public/assets"
+          DEST="assets/external"
+          mkdir -p "$DEST"
+
+          fetch_asset() {
+            local source="$1"
+            local target="$2"
+            echo "Téléchargement : $target"
+            local tmp="$DEST/$target.part"
+            rm -f "$tmp"
+            wget --quiet --tries=3 --timeout=60 \
+              --output-document="$tmp" "$BASE/$source"
+            test -s "$tmp"
+            mv "$tmp" "$DEST/$target"
+            test -s "$DEST/$target"
+          }
+
+          fetch_asset "models/characters/soldier.glb" "soldier.glb"
+          fetch_asset "models/fp/m4a1.glb" "m4a1_fp.glb"
+          fetch_asset "models/props/covered_car/covered_car.glb" "covered_car.glb"
+          fetch_asset "textures/Concrete034/Color.webp" "concrete_color.webp"
+          fetch_asset "textures/Concrete034/NormalGL.webp" "concrete_normal.webp"
+          fetch_asset "textures/Concrete034/Roughness.webp" "concrete_roughness.webp"
+
+          echo "Ressources téléchargées :"
+          du -h "$DEST"/*
+
+      - name: Convertir les modèles glTF pour Godot 4.3
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npm install --no-save --no-package-lock \\
+            @gltf-transform/core@4 \\
+            @gltf-transform/extensions@4 \\
+            @gltf-transform/functions@4 \\
+            meshoptimizer@0.22.0
+
+          find . -type f -name '*.glb' ! -path './backups/*' -print0 |
+          while IFS= read -r -d '' model; do
+            echo "Conversion glTF : $model"
+            node tools/convert_gltf_for_godot.mjs "$model"
+          done
+
+      - name: Importer et vérifier les ressources Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --version
+
+          # Les anciennes sauvegardes ne font pas partie du jeu.
+          if [ -d backups ]; then
+            touch backups/.gdignore
+          fi
+
+          set -o pipefail
+          godot --headless --editor --path . --import 2>&1 | tee godot-import.log
+
+          if grep -E 'ERROR: GLTF:|ERROR: Error importing|ERROR: Failed loading resource|SCRIPT ERROR:|Failed to load script' godot-import.log; then
+            echo "Échec de l'importation ou de l'analyse du projet Godot."
+            exit 1
+          fi
+
+          test -d .godot/imported
+          find .godot/imported -type f -print -quit | grep -q .
+
+          godot --headless --path . --script ci/validate_gltf_imports.gd
+
+      - name: Préparer le projet Godot dans les assets Android
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DEST="$GITHUB_WORKSPACE/android-host/app/src/main/assets"
+
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+
+          # Copier les fichiers du jeu en conservant leur arborescence.
+          # Exclure les fichiers Git, CI, Android et les sauvegardes.
+          tar \
+            --exclude='./.git' \
+            --exclude='./.github' \
+            --exclude='./android-host' \
+            --exclude='./www' \
+            --exclude='./package.json' \
+            --exclude='./package-lock.json' \
+            --exclude='./capacitor.config.json' \
+            --exclude='./backups' \
+            --exclude='./dist' \
+            --exclude='./build' \
+            --exclude='./.godot/editor' \
+            --exclude='./.godot/shader_cache' \
+            --exclude='./.godot/mono' \
+            --exclude='./.godot/imported' \
+            -cf - . | tar -xf - -C "$DEST"
+
+          # Les ressources importées sont indispensables au chargement.
+          mkdir -p "$DEST/.godot/imported"
+          cp -a .godot/imported/. "$DEST/.godot/imported/"
+
+          for f in project.godot main.tscn main.gd war.gd \
+                   hero.gd human.gd weapon.gd hero.glb; do
+            test -s "$DEST/$f" || {
+              echo "Fichier Godot manquant : $f"
+              exit 1
+            }
+          done
+
+          find "$DEST/.godot/imported" -type f -print -quit | grep -q .
+
+          echo "Projet Godot correctement préparé dans les assets Android."
+
+      - name: Configurer Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Vérifier l'environnement Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          gradle --version
+          test -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+
+      - name: Compiler les APK ARM32, ARM64 et AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gradle -p android-host \
+            :app:assembleArm32Debug \
+            :app:assembleArm64Debug \
+            :app:bundlePlayRelease \
+            --no-daemon
+
+      - name: Préparer les artefacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          cp android-host/app/build/outputs/apk/arm32/debug/*.apk \
+            dist/nightfall-android-32bit.apk
+
+          cp android-host/app/build/outputs/apk/arm64/debug/*.apk \
+            dist/nightfall-android-64bit.apk
+
+          cp android-host/app/build/outputs/bundle/playRelease/*.aab \
+            dist/nightfall-playstore-unsigned.aab
+
+          test -s dist/nightfall-android-32bit.apk
+          test -s dist/nightfall-android-64bit.apk
+          test -s dist/nightfall-playstore-unsigned.aab
+
+      - name: Publier APK ARM32
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-android-32bit
+          path: dist/nightfall-android-32bit.apk
+          if-no-files-found: error
+
+      - name: Publier APK ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-android-64bit
+          path: dist/nightfall-android-64bit.apk
+          if-no-files-found: error
+
+      - name: Publier AAB non signé
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-playstore-aab-unsigned
+          path: dist/nightfall-playstore-unsigned.aab
+          if-no-files-found: error

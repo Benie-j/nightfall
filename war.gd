@@ -1,516 +1,381 @@
 extends Node3D
+# NIGHTFALL_COD_LOOK — combat : tir hitscan, recul, vagues d'ennemis, santé régénérante, kill feed.
 
-var player: CharacterBody3D
-var cam: Camera3D
-var weapon
-var stats: Dictionary
+const SoldierScript = preload("res://soldier.gd")
+const Gear = preload("res://gear.gd")
+const FIRE_RATE := 0.085
+
+var game = null
+var player = null
+
+var max_hp := 100.0
 var hp := 100.0
 var mag := 30
 var ammo := 30
+var reserve := 240
 var score := 0
+var kills := 0
 var wave := 0
 var enemies: Array = []
-var fire_held := false
 var cd := 0.0
 var reload_t := 0.0
+var reload_time := 2.0
 var wave_t := 2.0
 var dead := false
-var rt := 0.0
-var motion := 0.0
-var look := Vector2.ZERO
-var cam_kick := 0.0
-var hurt_t := 0.0
+var dead_t := 0.0
+var regen_delay := 0.0
+var bloom := 0.0
+var spread := 0.02
 var hit_t := 0.0
-var mat_spark: StandardMaterial3D
-var mat_blood: StandardMaterial3D
-var mat_tracer: StandardMaterial3D
-# Interface
-var hp_fill: ColorRect
-var hp_lbl: Label
-var ammo_lbl: Label
-var wave_lbl: Label
-var over: Label
-var vignette: ColorRect
-var hit_marks: Array = []
-var fire_zone: Panel
-var reload_zone: Panel
-var joy_base: Panel
-var joy_knob: Panel
-var ads_held := false
-var ads_amt := 0.0
-var sprint_amt := 0.0
-var body_ref
-var zones: Array = []
-var cross: Array = []
-var dmg_ind: Control
-var ind_t := 0.0
+var hit_kill := false
+var banner := ""
+var banner_t := 0.0
 var feed: Array = []
-var feed_lbl: Label
-var diag_lbl: Label
-var diag_t := 10.0
+var dmg_marks: Array = []
+var last_kill_time := -10.0
+var combo := 0
+var clock := 0.0
+var kit: Dictionary = {}
 
-func _mat(c: Color) -> StandardMaterial3D:
-	var s := StandardMaterial3D.new()
-	s.albedo_color = c
-	s.roughness = 0.8
-	return s
+func _ready() -> void:
+	kit = {
+		"uniform": Gear.mat(Color(0.22, 0.24, 0.19), 0.9),
+		"vest": Gear.mat(Color(0.11, 0.12, 0.11), 0.8),
+		"skin": Gear.mat(Color(0.55, 0.42, 0.33), 0.7),
+		"helmet": Gear.mat(Color(0.09, 0.11, 0.09), 0.6, 0.1),
+		"boots": Gear.mat(Color(0.05, 0.05, 0.05), 0.7),
+		"cloth": Gear.mat(Color(0.08, 0.08, 0.09), 1.0),
+		"glass": Gear.mat(Color(0.05, 0.1, 0.12), 0.1, 0.6)
+	}
 
-func _unshaded(c: Color) -> StandardMaterial3D:
-	var s := StandardMaterial3D.new()
-	s.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	s.albedo_color = c
-	return s
+func reset() -> void:
+	for e in enemies:
+		if is_instance_valid(e):
+			e.queue_free()
+	enemies.clear()
+	hp = max_hp
+	ammo = mag
+	reserve = 240
+	score = 0
+	kills = 0
+	wave = 0
+	wave_t = 2.0
+	cd = 0.0
+	reload_t = 0.0
+	dead = false
+	dead_t = 0.0
+	regen_delay = 0.0
+	bloom = 0.0
+	hit_t = 0.0
+	banner_t = 0.0
+	feed.clear()
+	dmg_marks.clear()
+	combo = 0
 
-func _box(size: Vector3, pos: Vector3, m: Material, parent: Node) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var b := BoxMesh.new()
-	b.size = size
-	mi.mesh = b
-	mi.material_override = m
-	mi.position = pos
-	parent.add_child(mi)
-	return mi
+func start_reload() -> void:
+	if dead or reload_t > 0.0 or ammo >= mag or reserve <= 0:
+		return
+	if game == null or not game.playing():
+		return
+	reload_t = reload_time
+	game.fx.play("reload", -2.0)
 
-func _ctrl(c: Control, ax: float, ay: float, l: float, t: float, r: float, b: float) -> void:
-	c.anchor_left = ax
-	c.anchor_right = ax
-	c.anchor_top = ay
-	c.anchor_bottom = ay
-	c.offset_left = l
-	c.offset_top = t
-	c.offset_right = r
-	c.offset_bottom = b
-	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-func _circle(fill: Color, border: Color) -> Panel:
-	var p := Panel.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = fill
-	sb.set_corner_radius_all(200)
-	sb.border_color = border
-	sb.set_border_width_all(3)
-	p.add_theme_stylebox_override("panel", sb)
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return p
-
-func _zone(cl: CanvasLayer, id: int, text: String, fs: int, l: float, t: float, r: float, b: float) -> Panel:
-	var p := _circle(Color(1, 1, 1, 0.10), Color(1, 1, 1, 0.5))
-	_ctrl(p, 1.0, 1.0, l, t, r, b)
-	var lb := _label(text, fs, HORIZONTAL_ALIGNMENT_CENTER)
-	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	p.add_child(lb)
-	cl.add_child(p)
-	zones.append([p, id])
-	return p
-
-func _feed(text: String) -> void:
-	feed.append([text, 4.0])
+func feed_add(text: String, col: Color) -> void:
+	feed.append({"text": text, "t": 3.5, "col": col})
 	if feed.size() > 4:
 		feed.pop_front()
 
-func _diag() -> String:
-	if body_ref == null:
-		return ""
-	if body_ref.fallback != null:
-		return "Modèle : secours (capsules) - hero.glb non chargé"
-	if body_ref.skeleton == null:
-		return "Modèle : hero.glb ÉCHEC - " + str(body_ref.load_status)
-	return "Modèle : hero.glb OK - os reconnus %d/16" % body_ref.bone_ids.size()
+# ---------------------------------------------------------------- maths de tir
 
-func _label(text: String, size: int, align: int) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	l.add_theme_constant_override("outline_size", 6)
-	l.horizontal_alignment = align
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return l
+func _ray_sphere(o: Vector3, d: Vector3, c: Vector3, r: float) -> float:
+	var oc: Vector3 = o - c
+	var b: float = oc.dot(d)
+	var cc: float = oc.dot(oc) - r * r
+	var disc: float = b * b - cc
+	if disc < 0.0:
+		return -1.0
+	var sq: float = sqrt(disc)
+	var t: float = -b - sq
+	if t < 0.0:
+		t = -b + sq
+		if t < 0.0:
+			return -1.0
+	return t
 
-func _ready() -> void:
-	randomize()
-	mat_spark = _unshaded(Color(1.0, 0.8, 0.4))
-	mat_blood = _unshaded(Color(0.45, 0.02, 0.02))
-	mat_tracer = _unshaded(Color(1.0, 0.85, 0.35))
-	weapon = preload("res://weapon.gd").new()
-	weapon.setup("rifle")
-	cam.add_child(weapon)
-	stats = weapon.stats
-	mag = int(stats["mag"])
-	ammo = mag
-	var cl := CanvasLayer.new()
-	add_child(cl)
-	vignette = ColorRect.new()
-	vignette.color = Color(0.7, 0, 0, 0)
-	vignette.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cl.add_child(vignette)
-	# Barre de vie
-	var hp_bg := ColorRect.new()
-	hp_bg.color = Color(0, 0, 0, 0.55)
-	_ctrl(hp_bg, 0.0, 0.0, 20, 20, 340, 44)
-	cl.add_child(hp_bg)
-	hp_fill = ColorRect.new()
-	hp_fill.position = Vector2(3, 3)
-	hp_fill.size = Vector2(314, 18)
-	hp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hp_bg.add_child(hp_fill)
-	hp_lbl = _label("100", 20, HORIZONTAL_ALIGNMENT_CENTER)
-	hp_lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	hp_bg.add_child(hp_lbl)
-	# Vague / score
-	wave_lbl = _label("", 26, HORIZONTAL_ALIGNMENT_RIGHT)
-	_ctrl(wave_lbl, 1.0, 0.0, -420, 20, -20, 70)
-	cl.add_child(wave_lbl)
-	# Munitions
-	ammo_lbl = _label("", 44, HORIZONTAL_ALIGNMENT_RIGHT)
-	_ctrl(ammo_lbl, 1.0, 0.0, -420, 74, -20, 134)
-	cl.add_child(ammo_lbl)
-	# Réticule dynamique (s'écarte en mouvement et au tir, disparaît en visée)
-	for d in [Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Vector2(1, 0)]:
-		var cr := ColorRect.new()
-		cr.color = Color(1, 1, 1, 0.85)
-		_ctrl(cr, 0.5, 0.5, 0, 0, 2, 2)
-		cl.add_child(cr)
-		cross.append([cr, d])
-	# Marqueur de touche (croix à 45 degrés)
-	for ang in [45.0, -45.0]:
-		var hm := ColorRect.new()
-		hm.color = Color(1, 1, 1, 0.95)
-		_ctrl(hm, 0.5, 0.5, -11, -1.5, 11, 1.5)
-		hm.pivot_offset = Vector2(11, 1.5)
-		hm.rotation_degrees = ang
-		hm.visible = false
-		cl.add_child(hm)
-		hit_marks.append(hm)
-	# Zones tactiles (gérées par main.gd, multi-doigts) : 1 tir, 2 recharge, 3 viser, 4 saut, 5 accroupi
-	fire_zone = _zone(cl, 1, "TIR", 30, -250, -250, -90, -90)
-	reload_zone = _zone(cl, 2, "R", 28, -340, -150, -270, -80)
-	_zone(cl, 3, "VISER", 18, -130, -370, -40, -280)
-	_zone(cl, 4, "SAUT", 18, -370, -260, -290, -180)
-	_zone(cl, 5, "ACCR.", 16, -470, -170, -390, -90)
-	# Joystick flottant
-	joy_base = _circle(Color(1, 1, 1, 0.06), Color(1, 1, 1, 0.35))
-	joy_base.size = Vector2(160, 160)
-	joy_base.visible = false
-	cl.add_child(joy_base)
-	joy_knob = _circle(Color(1, 1, 1, 0.25), Color(1, 1, 1, 0.6))
-	joy_knob.size = Vector2(70, 70)
-	joy_knob.visible = false
-	cl.add_child(joy_knob)
-	# Indicateur de direction des tirs reçus
-	dmg_ind = Control.new()
-	dmg_ind.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ctrl(dmg_ind, 0.5, 0.5, 0, 0, 0, 0)
-	var bar := ColorRect.new()
-	bar.color = Color(0.9, 0.1, 0.1, 0.9)
-	bar.position = Vector2(-70, -210)
-	bar.size = Vector2(140, 12)
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dmg_ind.add_child(bar)
-	dmg_ind.visible = false
-	cl.add_child(dmg_ind)
-	feed_lbl = _label("", 22, HORIZONTAL_ALIGNMENT_LEFT)
-	_ctrl(feed_lbl, 0.0, 0.0, 20, 60, 520, 190)
-	cl.add_child(feed_lbl)
-	diag_lbl = _label("", 18, HORIZONTAL_ALIGNMENT_LEFT)
-	_ctrl(diag_lbl, 0.0, 1.0, 20, -60, 760, -20)
-	cl.add_child(diag_lbl)
-	over = _label("", 48, HORIZONTAL_ALIGNMENT_CENTER)
-	over.visible = false
-	_ctrl(over, 0.5, 0.5, -400, -100, 400, 100)
-	cl.add_child(over)
+func _ray_capsule(o: Vector3, d: Vector3, a: Vector3, b: Vector3, r: float) -> float:
+	var v: Vector3 = b - a
+	var w: Vector3 = o - a
+	var uv: float = d.dot(v)
+	var vv: float = v.dot(v)
+	var uw: float = d.dot(w)
+	var vw: float = v.dot(w)
+	var den: float = vv - uv * uv
+	var s: float = 0.5
+	var t: float = 0.0
+	if den > 0.00001:
+		t = (uv * vw - uw * vv) / den
+		s = (vw + t * uv) / vv
+	s = clampf(s, 0.0, 1.0)
+	t = s * uv - uw
+	if t < 0.0:
+		return -1.0
+	var pr: Vector3 = o + d * t
+	var ps: Vector3 = a + v * s
+	var dd: float = pr.distance_to(ps)
+	if dd > r:
+		return -1.0
+	return maxf(t - sqrt(maxf(r * r - dd * dd, 0.0)), 0.0)
 
-func zone_at(p: Vector2) -> int:
-	for z in zones:
-		if _in_circle(z[0], p, 1.25):
-			return z[1]
-	return 0
+# ---------------------------------------------------------------- tir du joueur
 
-func _in_circle(c: Control, p: Vector2, k: float) -> bool:
-	var r := c.get_global_rect()
-	return p.distance_to(r.get_center()) <= r.size.x * 0.5 * k
+func _shoot() -> void:
+	cd = FIRE_RATE
+	ammo -= 1
+	bloom = minf(bloom + 0.0035, 0.03)
+	var cam: Camera3D = game.cam
+	var bs: Basis = cam.global_transform.basis
+	var d: Vector3 = (-bs.z + bs.x * randf_range(-spread, spread) + bs.y * randf_range(-spread, spread)).normalized()
+	var o: Vector3 = cam.global_position
+	var head_pos: Vector3 = game.rig.global_position
+	var lead: float = maxf((head_pos - o).dot(d), 0.0)
+	o += d * lead
+	var max_d := 160.0
+	var t_world: float = game.ray_world(o, d, max_d)
+	var best = null
+	var best_t: float = t_world
+	var head_hit := false
+	for e in enemies:
+		if not e.alive:
+			continue
+		var base: Vector3 = e.global_position
+		var th: float = _ray_sphere(o, d, base + Vector3(0, 1.68, 0), 0.17)
+		if th >= 0.0 and th < best_t:
+			best = e
+			best_t = th
+			head_hit = true
+		else:
+			var tb: float = _ray_capsule(o, d, base + Vector3(0, 0.2, 0), base + Vector3(0, 1.5, 0), 0.32)
+			if tb >= 0.0 and tb < best_t:
+				best = e
+				best_t = tb
+				head_hit = false
+	var hit_pos: Vector3 = o + d * best_t
+	var muzzle: Vector3 = game.muzzle_pos()
+	game.show_flash()
+	game.add_recoil(0.0105)
+	game.fx.play("shot", -2.0, randf_range(0.95, 1.05))
+	game.fx.tracer(muzzle, hit_pos)
+	game.fx.shell(muzzle - d * 0.3 + Vector3(0, 0.03, 0), bs.x)
+	if best != null:
+		var dmg := 34.0
+		if head_hit:
+			dmg = 120.0
+		best.hp -= dmg
+		game.fx.burst("blood", hit_pos, -d)
+		hit_t = 0.2
+		hit_kill = false
+		game.fx.play("hit", -6.0, 1.0)
+		if best.hp <= 0.0:
+			_kill(best, head_hit)
+	elif t_world < max_d - 0.5:
+		var n: Vector3 = (-d + Vector3.UP * 0.6).normalized()
+		if d.y < -0.6:
+			game.fx.burst("dust", hit_pos, Vector3.UP)
+		else:
+			game.fx.burst("spark", hit_pos, n)
+			game.fx.burst("dust", hit_pos, n)
 
-func set_joystick(active: bool, origin: Vector2, offset: Vector2) -> void:
-	joy_base.visible = active
-	joy_knob.visible = active
-	if active:
-		joy_base.position = origin - joy_base.size * 0.5
-		joy_knob.position = origin + offset - joy_knob.size * 0.5
+func _kill(e, head: bool) -> void:
+	e.die()
+	enemies.erase(e)
+	kills += 1
+	hit_kill = true
+	hit_t = 0.4
+	game.fx.play("kill", -3.0)
+	var pts := 100
+	var label := "ÉLIMINATION  +100"
+	if head:
+		pts = 150
+		label = "TIR À LA TÊTE  +150"
+	if clock - last_kill_time < 3.5:
+		combo += 1
+	else:
+		combo = 0
+	last_kill_time = clock
+	score += pts
+	feed_add(label, Color(1, 1, 1, 1))
+	if combo >= 1:
+		var bonus: int = 50 * combo
+		score += bonus
+		var names := ["", "DOUBLE ÉLIMINATION", "TRIPLE ÉLIMINATION", "QUADRUPLE ÉLIMINATION"]
+		var nm: String = "SÉRIE x%d" % (combo + 1)
+		if combo < names.size():
+			nm = str(names[combo])
+		feed_add("%s  +%d" % [nm, bonus], Color(1.0, 0.72, 0.2, 1))
+	if randf() < 0.3:
+		reserve = mini(reserve + 30, 300)
+		feed_add("MUNITIONS  +30", Color(0.7, 0.9, 0.6, 1))
+	get_tree().create_timer(6.0).timeout.connect(e.queue_free)
 
-func reload() -> void:
-	if dead or reload_t > 0.0 or ammo >= mag:
+# ---------------------------------------------------------------- dégâts subis
+
+func _hurt(n: float, from_pos: Vector3) -> void:
+	if dead:
 		return
-	reload_t = float(stats["reload"])
-	weapon.start_reload(reload_t)
+	hp -= n
+	regen_delay = 5.0
+	game.on_hurt(n)
+	var v: Vector3 = from_pos - player.position
+	dmg_marks.append({"ang": atan2(-v.x, -v.z), "t": 1.3})
+	if dmg_marks.size() > 8:
+		dmg_marks.pop_front()
+	if hp <= 0.0:
+		hp = 0.0
+		dead = true
+		dead_t = 1.1
+		game.hud.ads_on = false
 
-func _ray(from: Vector3, to: Vector3, mask: int) -> Dictionary:
-	var q := PhysicsRayQueryParameters3D.create(from, to, mask)
-	return get_world_3d().direct_space_state.intersect_ray(q)
+func _enemy_fire(e, dist: float) -> void:
+	e.fire_flash()
+	var from: Vector3 = e.muzzle_pos()
+	var chest: Vector3 = player.position + Vector3(0, 1.2, 0)
+	game.fx.play3d("enemy", from, -3.0 - dist * 0.04, randf_range(0.85, 1.05))
+	var chance: float = clampf(0.55 - dist * 0.011, 0.08, 0.5)
+	chance *= lerpf(1.0, 0.8, game.ads_t)
+	if randf() < chance:
+		game.fx.tracer(from, chest)
+		_hurt(minf(7.0 + wave * 0.3, 12.0), e.position)
+	else:
+		var miss: Vector3 = chest + Vector3(randf_range(-1.6, 1.6), randf_range(-1.0, 1.2), randf_range(-1.6, 1.6))
+		var dir: Vector3 = (miss - from).normalized()
+		var tt: float = game.ray_world(from, dir, dist + 25.0)
+		game.fx.tracer(from, from + dir * tt)
+		if tt < dist + 24.0:
+			game.fx.burst("dust", from + dir * tt, Vector3.UP)
 
-func _find_animation_player(root: Node) -> AnimationPlayer:
-	if root is AnimationPlayer:
-		return root as AnimationPlayer
-	for child in root.get_children():
-		var found := _find_animation_player(child)
-		if found != null:
-			return found
-	return null
-
-func _play_enemy_animation(enemy: Node3D, moving: bool) -> void:
-	if not enemy.has_meta("anim_player"):
-		return
-	var anim := enemy.get_meta("anim_player") as AnimationPlayer
-	if anim == null:
-		return
-	var wanted := ["run", "walk"] if moving else ["idle"]
-	for clip in anim.get_animation_list():
-		var clip_name := String(clip).to_lower()
-		for keyword in wanted:
-			if clip_name.contains(keyword):
-				if anim.current_animation != clip:
-					anim.play(clip)
-				return
+# ---------------------------------------------------------------- vagues et IA
 
 func _spawn_wave() -> void:
 	wave += 1
 	wave_t = 3.0
-	hp = minf(100.0, hp + 20.0)
-	for i in range(3 + wave * 2):
-		var e := Node3D.new()
-		var sgn := 1.0 if randf() < 0.5 else -1.0
-		e.position = Vector3(randf_range(-9.0, 9.0), 0, player.position.z + sgn * randf_range(40.0, 70.0))
-		# Modèle de soldat riggé. Le modèle géométrique reste disponible
-		# si le GLB est absent ou ne peut pas être chargé.
-		var soldier_scene := load("res://assets/external/soldier.glb") as PackedScene
-		if soldier_scene != null:
-			var soldier := soldier_scene.instantiate()
-			soldier.scale = Vector3.ONE
-			e.add_child(soldier)
-			var anim := _find_animation_player(soldier)
-			if anim != null:
-				e.set_meta("anim_player", anim)
-				_play_enemy_animation(e, false)
-		else:
-			_box(Vector3(0.5, 0.7, 0.3), Vector3(0, 1.3, 0), _mat(Color(0.25, 0.3, 0.18)), e)
-			_box(Vector3(0.45, 0.85, 0.28), Vector3(0, 0.45, 0), _mat(Color(0.2, 0.22, 0.14)), e)
-			_box(Vector3(0.28, 0.3, 0.28), Vector3(0, 1.85, 0), _mat(Color(0.5, 0.38, 0.3)), e)
-			_box(Vector3(0.34, 0.18, 0.34), Vector3(0, 2.05, 0), _mat(Color(0.15, 0.18, 0.1)), e)
-			_box(Vector3(0.07, 0.1, 0.6), Vector3(0.25, 1.3, -0.35), _mat(Color(0.05, 0.05, 0.05)), e)
-		# Cible de tir : corps statique sur la couche 2 (ennemis)
-		var sb := StaticBody3D.new()
-		sb.collision_layer = 2
-		sb.collision_mask = 0
-		var cs := CollisionShape3D.new()
-		var cap := CapsuleShape3D.new()
-		cap.radius = 0.35
-		cap.height = 1.9
-		cs.shape = cap
-		cs.position.y = 0.95
-		sb.add_child(cs)
-		e.add_child(sb)
-		e.set_meta("hp", 60.0)
-		e.set_meta("cd", randf_range(1.0, 2.5))
-		e.set_meta("body", sb)
+	reserve = mini(reserve + 60, 300)
+	banner = "VAGUE %d" % wave
+	banner_t = 3.2
+	var count: int = mini(4 + wave * 2, 14)
+	for i in range(count):
+		var e := SoldierScript.new()
+		e.build(kit)
+		var sgn: float = 1.0 if randf() < 0.5 else -1.0
+		var pz: float = clampf(player.position.z + sgn * randf_range(45.0, 75.0), -180.0, 180.0)
+		e.position = game.push_out(Vector3(randf_range(-7.0, 7.0), 0.0, pz), 0.5)
+		e.hp = minf(100.0 + wave * 6.0, 160.0)
+		e.pref = randf_range(14.0, 32.0)
+		e.cd = randf_range(1.0, 3.0)
+		e.strafe_dir = 1.0 if randf() < 0.5 else -1.0
 		add_child(e)
 		enemies.append(e)
 
-func _tracer(a: Vector3, b: Vector3) -> void:
-	var dist_ab := a.distance_to(b)
-	if dist_ab < 0.5:
-		return
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.015, 0.015, dist_ab)
-	mi.mesh = bm
-	mi.material_override = mat_tracer
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
-	var up := Vector3.UP
-	if absf((b - a).normalized().y) > 0.99:
-		up = Vector3.RIGHT
-	mi.look_at_from_position((a + b) * 0.5, b, up)
-	get_tree().create_timer(0.04).timeout.connect(mi.queue_free)
-
-func _impact(p: Vector3, n: Vector3, flesh: bool) -> void:
-	var fx := CPUParticles3D.new()
-	fx.one_shot = true
-	fx.amount = 8
-	fx.lifetime = 0.35
-	fx.explosiveness = 1.0
-	fx.direction = n
-	fx.spread = 55.0
-	fx.initial_velocity_min = 2.0
-	fx.initial_velocity_max = 4.5
-	fx.gravity = Vector3(0, -9.0, 0)
-	var sm := SphereMesh.new()
-	sm.radius = 0.025
-	sm.height = 0.05
-	sm.radial_segments = 4
-	sm.rings = 2
-	sm.material = mat_blood if flesh else mat_spark
-	fx.mesh = sm
-	add_child(fx)
-	fx.global_position = p
-	fx.emitting = true
-	get_tree().create_timer(0.6).timeout.connect(fx.queue_free)
-
-func _shoot() -> void:
-	cd = 60.0 / float(stats["rpm"])
-	ammo -= 1
-	weapon.kick()
-	cam_kick = minf(0.06, cam_kick + 0.010 * (1.0 - ads_amt * 0.5))
-	var o: Vector3 = cam.global_position
-	var bs := cam.global_transform.basis
-	var spread: float = float(stats["spread"]) * (1.0 + motion * 1.5 + sprint_amt) * (1.0 - ads_amt * 0.65)
-	var fwd: Vector3 = -bs.z + bs.x * randf_range(-spread, spread) + bs.y * randf_range(-spread, spread)
-	fwd = fwd.normalized()
-	var end: Vector3 = o + fwd * 150.0
-	# Couches : 1 décor, 2 ennemis, 8 sol
-	var hit := _ray(o, end, 1 | 2 | 8)
-	if not hit.is_empty():
-		end = hit.position
-		var col := hit.collider as Node
-		var par = col.get_parent()
-		if par != null and par in enemies:
-			_damage_enemy(par, float(stats["damage"]))
-			_impact(end, hit.normal, true)
-		else:
-			_impact(end, hit.normal, false)
-	_tracer(weapon.muzzle.global_position, end)
-
-func _damage_enemy(e: Node3D, dmg: float) -> void:
-	var h: float = float(e.get_meta("hp")) - dmg
-	e.set_meta("hp", h)
-	hit_t = 0.12
-	if h <= 0.0:
-		enemies.erase(e)
-		score += 10
-		_feed("Soldat éliminé  +10")
-		hit_t = 0.25
-		var sb := e.get_meta("body") as StaticBody3D
-		sb.collision_layer = 0
-		create_tween().tween_property(e, "rotation:x", -PI / 2.0, 0.3)
-		get_tree().create_timer(3.0).timeout.connect(e.queue_free)
-
-func _hurt(n: float, src := Vector3.ZERO) -> void:
-	hp -= n
-	hurt_t = 0.35
-	if src != Vector3.ZERO:
-		var to := src - player.position
-		to.y = 0.0
-		var fwd := -player.global_transform.basis.z
-		fwd.y = 0.0
-		if to.length() > 0.1:
-			dmg_ind.rotation = -fwd.signed_angle_to(to, Vector3.UP)
-			ind_t = 1.2
-	if hp <= 0.0:
-		hp = 0.0
-		dead = true
-		rt = 1.0
-		fire_held = false
-		over.text = "MISSION ÉCHOUÉE\nVague %d - Score %d\nTouche l'écran pour recommencer" % [wave, score]
-		over.visible = true
-
-func _update_enemies(delta: float) -> void:
-	var eye: Vector3 = cam.global_position
+func _update_enemies(dt: float) -> void:
+	var pp: Vector3 = player.position
 	for e in enemies:
-		var d: Vector3 = player.position - e.position
-		d.y = 0
-		var dist := d.length()
-		var dir := d.normalized()
-		e.rotation.y = atan2(-dir.x, -dir.z)
-		# Ligne de vue : le décor (couche 1) bloque la vue et les tirs
-		var los := _ray(e.position + Vector3(0, 1.6, 0), eye, 1).is_empty()
-		var moving := false
-		if dist > 18.0 or (not los and dist > 6.0):
-			e.position += dir * 3.0 * delta
-			e.position.x = clampf(e.position.x, -12.0, 12.0)
-			moving = true
-		elif dist < 10.0:
-			e.position -= dir * 1.5 * delta
-			e.position.x = clampf(e.position.x, -12.0, 12.0)
-			moving = true
-		_play_enemy_animation(e, moving)
-		var c: float = float(e.get_meta("cd")) - delta
-		if los and dist < 40.0 and c <= 0.0:
-			c = randf_range(0.8, 1.6)
-			var target: Vector3 = eye
-			if randf() < 0.35:
-				_hurt(7.0, e.position)
+		if not e.alive:
+			continue
+		var ep: Vector3 = e.position
+		var to_p := Vector3(pp.x - ep.x, 0.0, pp.z - ep.z)
+		var dist: float = to_p.length()
+		var dir: Vector3 = to_p / maxf(dist, 0.001)
+		e.rotation.y = lerp_angle(e.rotation.y, atan2(-dir.x, -dir.z), minf(8.0 * dt, 1.0))
+		e.los_t -= dt
+		if e.los_t <= 0.0:
+			e.los_t = randf_range(0.2, 0.35)
+			e.los = not game.blocked(ep + Vector3(0, 1.5, 0), pp + Vector3(0, 1.3, 0))
+		var mv := Vector3.ZERO
+		if dist > e.pref + 3.0 or not e.los:
+			mv += dir
+		elif dist < e.pref - 6.0:
+			mv -= dir * 0.7
+		e.strafe_t -= dt
+		if e.strafe_t <= 0.0:
+			e.strafe_t = randf_range(1.0, 2.6)
+			if randf() < 0.55:
+				e.strafe_dir = -e.strafe_dir
+		if e.los:
+			mv += Vector3(-dir.z, 0.0, dir.x) * e.strafe_dir * 0.55
+		var speed01 := 0.0
+		if mv.length() > 0.05:
+			mv = mv.normalized()
+			ep += mv * 3.3 * dt
+			speed01 = 1.0
+		ep = game.push_out(ep, 0.45)
+		for o in enemies:
+			if o != e and o.alive:
+				var dd := Vector3(ep.x - o.position.x, 0.0, ep.z - o.position.z)
+				var l: float = dd.length()
+				if l < 1.0 and l > 0.001:
+					ep += dd / l * (1.0 - l) * 0.5
+		e.position = ep
+		e.animate(speed01, dt)
+		e.cd -= dt
+		if e.cd <= 0.0 and e.los and dist < 60.0:
+			if e.burst_left <= 0:
+				e.burst_left = randi_range(2, 4)
+			_enemy_fire(e, dist)
+			e.burst_left -= 1
+			if e.burst_left > 0:
+				e.cd = 0.13
 			else:
-				target += Vector3(randf_range(-1.5, 1.5), randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
-			_tracer(e.position + Vector3(0, 1.4, 0), target)
-		e.set_meta("cd", c)
+				e.cd = randf_range(1.0, 2.3)
 
-func _input(e) -> void:
-	if dead and rt <= 0.0 and ((e is InputEventScreenTouch and e.pressed) or (e is InputEventKey and e.pressed)):
-		get_tree().reload_current_scene()
-
-func _physics_process(delta: float) -> void:
-	if dead:
-		return
-	cd -= delta
-	if reload_t > 0.0:
-		reload_t -= delta
-		if reload_t <= 0.0:
-			ammo = mag
-	elif (fire_held or Input.is_key_pressed(KEY_SPACE)) and cd <= 0.0 and ammo > 0:
-		_shoot()
-	if ammo <= 0 or Input.is_key_pressed(KEY_R):
-		reload()
-	_update_enemies(delta)
-	if enemies.is_empty():
-		wave_t -= delta
-		if wave_t <= 0.0:
-			_spawn_wave()
+func _decay(dt: float) -> void:
+	for i in range(feed.size() - 1, -1, -1):
+		feed[i]["t"] = float(feed[i]["t"]) - dt
+		if float(feed[i]["t"]) <= 0.0:
+			feed.remove_at(i)
+	for i in range(dmg_marks.size() - 1, -1, -1):
+		dmg_marks[i]["t"] = float(dmg_marks[i]["t"]) - dt
+		if float(dmg_marks[i]["t"]) <= 0.0:
+			dmg_marks.remove_at(i)
 
 func _process(delta: float) -> void:
+	if game == null or not game.playing():
+		return
+	var dt: float = minf(delta, 0.05)
+	clock += dt
+	hit_t = maxf(hit_t - dt, 0.0)
+	banner_t = maxf(banner_t - dt, 0.0)
+	_decay(dt)
 	if dead:
-		rt -= delta
-	cam_kick = lerpf(cam_kick, 0.0, minf(1.0, delta * 12.0))
-	cam.rotation.x = cam_kick
-	var want_ads := ads_held and reload_t <= 0.0 and not dead
-	ads_amt = move_toward(ads_amt, 1.0 if want_ads else 0.0, delta * 7.0)
-	cam.fov = lerpf(70.0, 52.0, ads_amt) + sprint_amt * 4.0
-	weapon.update(delta, motion, look, ads_amt, sprint_amt)
-	look = Vector2.ZERO
-	hurt_t = maxf(0.0, hurt_t - delta)
-	hit_t = maxf(0.0, hit_t - delta)
-	vignette.color.a = minf(0.45, hurt_t * 1.3)
-	for m in hit_marks:
-		m.visible = hit_t > 0.0
-	var ratio := clampf(hp / 100.0, 0.0, 1.0)
-	hp_fill.size.x = 314.0 * ratio
-	hp_fill.color = Color(0.9, 0.15, 0.1).lerp(Color(0.25, 0.8, 0.3), ratio)
-	hp_lbl.text = str(int(hp))
-	ammo_lbl.text = "RECHARGE…" if reload_t > 0.0 else "%d / %d" % [ammo, mag]
-	wave_lbl.text = "VAGUE %d   SCORE %d" % [wave, score]
-	ind_t = maxf(0.0, ind_t - delta)
-	dmg_ind.visible = ind_t > 0.0
-	var gap: float = 6.0 + 16.0 * clampf(motion + sprint_amt, 0.0, 1.5) + 14.0 * weapon.kick_v
-	for it in cross:
-		var cr: ColorRect = it[0]
-		var dd: Vector2 = it[1]
-		var bw := 2.0 if dd.x == 0.0 else 9.0
-		var bh := 9.0 if dd.x == 0.0 else 2.0
-		var cc := dd * (gap + 5.0)
-		cr.offset_left = cc.x - bw * 0.5
-		cr.offset_right = cc.x + bw * 0.5
-		cr.offset_top = cc.y - bh * 0.5
-		cr.offset_bottom = cc.y + bh * 0.5
-		cr.visible = ads_amt < 0.5
-	for f in feed:
-		f[1] -= delta
-	while not feed.is_empty() and feed[0][1] <= 0.0:
-		feed.pop_front()
-	var txt := ""
-	for f in feed:
-		txt += str(f[0]) + "\n"
-	feed_lbl.text = txt
-	if diag_t > 0.0:
-		diag_t -= delta
-		diag_lbl.text = _diag()
-	else:
-		diag_lbl.text = ""
+		dead_t -= dt
+		if dead_t <= 0.0:
+			game.hud.menu = 2
+			game.hud.release_all()
+		return
+	regen_delay -= dt
+	if regen_delay <= 0.0 and hp < max_hp:
+		hp = minf(max_hp, hp + 22.0 * dt)
+	if reload_t > 0.0:
+		reload_t -= dt
+		if reload_t <= 0.0:
+			var take: int = mini(mag - ammo, reserve)
+			ammo += take
+			reserve -= take
+	cd -= dt
+	bloom = maxf(bloom - dt * 0.05, 0.0)
+	spread = lerpf(0.020, 0.0035, game.ads_t) + game.moving * 0.014 * (1.0 - game.ads_t) + bloom
+	var wants: bool = game.hud.fire_held or Input.is_key_pressed(KEY_SPACE)
+	if reload_t <= 0.0:
+		if wants and cd <= 0.0:
+			if ammo > 0:
+				_shoot()
+			elif reserve > 0:
+				start_reload()
+			else:
+				cd = 0.4
+				game.fx.play("empty", -4.0)
+		elif ammo <= 0 and reserve > 0:
+			start_reload()
+	_update_enemies(dt)
+	if enemies.is_empty():
+		wave_t -= dt
+		if wave_t <= 0.0:
+			_spawn_wave()
