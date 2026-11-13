@@ -29,13 +29,38 @@ jobs:
         run: |
           set -euo pipefail
 
+          ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "${ANDROID_HOME}" || {
+            echo "ANDROID_HOME absent."
+            exit 1
+          }
+
+          SDKMANAGER="$(command -v sdkmanager)"
+          test -n "${SDKMANAGER}"
+
           echo "ANDROID_HOME=${ANDROID_HOME}"
-          yes | sdkmanager --sdk_root="${ANDROID_HOME}" \
+
+          # Éviter SIGPIPE de yes tout en vérifiant le résultat sdkmanager.
+          set +o pipefail
+          license_status=0
+          yes | "${SDKMANAGER}" --sdk_root="${ANDROID_HOME}" --licenses || license_status=$?
+          set -o pipefail
+
+          if [[ "${license_status}" -ne 0 ]]; then
+            echo "Échec de l'acceptation des licences."
+            exit "${license_status}"
+          fi
+
+          "${SDKMANAGER}" --sdk_root="${ANDROID_HOME}" \
             "platforms;android-35" \
             "build-tools;35.0.0" \
-            "platform-tools"
+            "platform-tools" </dev/null
 
-          sdkmanager --list_installed
+          test -d "${ANDROID_HOME}/platforms/android-35"
+          test -d "${ANDROID_HOME}/build-tools/35.0.0"
+          test -x "${ANDROID_HOME}/platform-tools/adb"
+
+          "${SDKMANAGER}" --sdk_root="${ANDROID_HOME}" --list_installed
 
 
       - name: Importer les ressources Godot
