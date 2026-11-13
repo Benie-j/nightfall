@@ -138,6 +138,17 @@ func _build_world() -> void:
 	_multibox(bulbs, bulb)
 	_multibox(benches, mat(Color(0.48, 0.35, 0.22)))
 
+	# Véhicule 3D statique pour enrichir le décor urbain.
+	var car_scene := load("res://assets/external/covered_car.glb") as PackedScene
+	if car_scene != null:
+		var car := car_scene.instantiate()
+		car.position = Vector3(7.5, 0.0, 15.0)
+		car.rotation.y = PI * 0.5
+		car.scale = Vector3.ONE
+		add_child(car)
+	else:
+		push_warning("Véhicule 3D absent : décor procédural conservé.")
+
 func _ready() -> void:
 	randomize()
 	get_viewport().scaling_3d_scale = RENDER_SCALE

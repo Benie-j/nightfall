@@ -249,6 +249,30 @@ func _ray(from: Vector3, to: Vector3, mask: int) -> Dictionary:
 	var q := PhysicsRayQueryParameters3D.create(from, to, mask)
 	return get_world_3d().direct_space_state.intersect_ray(q)
 
+func _find_animation_player(root: Node) -> AnimationPlayer:
+	if root is AnimationPlayer:
+		return root as AnimationPlayer
+	for child in root.get_children():
+		var found := _find_animation_player(child)
+		if found != null:
+			return found
+	return null
+
+func _play_enemy_animation(enemy: Node3D, moving: bool) -> void:
+	if not enemy.has_meta("anim_player"):
+		return
+	var anim := enemy.get_meta("anim_player") as AnimationPlayer
+	if anim == null:
+		return
+	var wanted := ["run", "walk"] if moving else ["idle"]
+	for clip in anim.get_animation_list():
+		var clip_name := String(clip).to_lower()
+		for keyword in wanted:
+			if clip_name.contains(keyword):
+				if anim.current_animation != clip:
+					anim.play(clip)
+				return
+
 func _spawn_wave() -> void:
 	wave += 1
 	wave_t = 3.0
@@ -257,11 +281,23 @@ func _spawn_wave() -> void:
 		var e := Node3D.new()
 		var sgn := 1.0 if randf() < 0.5 else -1.0
 		e.position = Vector3(randf_range(-9.0, 9.0), 0, player.position.z + sgn * randf_range(40.0, 70.0))
-		_box(Vector3(0.5, 0.7, 0.3), Vector3(0, 1.3, 0), _mat(Color(0.25, 0.3, 0.18)), e)
-		_box(Vector3(0.45, 0.85, 0.28), Vector3(0, 0.45, 0), _mat(Color(0.2, 0.22, 0.14)), e)
-		_box(Vector3(0.28, 0.3, 0.28), Vector3(0, 1.85, 0), _mat(Color(0.5, 0.38, 0.3)), e)
-		_box(Vector3(0.34, 0.18, 0.34), Vector3(0, 2.05, 0), _mat(Color(0.15, 0.18, 0.1)), e)
-		_box(Vector3(0.07, 0.1, 0.6), Vector3(0.25, 1.3, -0.35), _mat(Color(0.05, 0.05, 0.05)), e)
+		# Modèle de soldat riggé. Le modèle géométrique reste disponible
+		# si le GLB est absent ou ne peut pas être chargé.
+		var soldier_scene := load("res://assets/external/soldier.glb") as PackedScene
+		if soldier_scene != null:
+			var soldier := soldier_scene.instantiate()
+			soldier.scale = Vector3.ONE
+			e.add_child(soldier)
+			var anim := _find_animation_player(soldier)
+			if anim != null:
+				e.set_meta("anim_player", anim)
+				_play_enemy_animation(e, false)
+		else:
+			_box(Vector3(0.5, 0.7, 0.3), Vector3(0, 1.3, 0), _mat(Color(0.25, 0.3, 0.18)), e)
+			_box(Vector3(0.45, 0.85, 0.28), Vector3(0, 0.45, 0), _mat(Color(0.2, 0.22, 0.14)), e)
+			_box(Vector3(0.28, 0.3, 0.28), Vector3(0, 1.85, 0), _mat(Color(0.5, 0.38, 0.3)), e)
+			_box(Vector3(0.34, 0.18, 0.34), Vector3(0, 2.05, 0), _mat(Color(0.15, 0.18, 0.1)), e)
+			_box(Vector3(0.07, 0.1, 0.6), Vector3(0.25, 1.3, -0.35), _mat(Color(0.05, 0.05, 0.05)), e)
 		# Cible de tir : corps statique sur la couche 2 (ennemis)
 		var sb := StaticBody3D.new()
 		sb.collision_layer = 2
@@ -387,12 +423,16 @@ func _update_enemies(delta: float) -> void:
 		e.rotation.y = atan2(-dir.x, -dir.z)
 		# Ligne de vue : le décor (couche 1) bloque la vue et les tirs
 		var los := _ray(e.position + Vector3(0, 1.6, 0), eye, 1).is_empty()
+		var moving := false
 		if dist > 18.0 or (not los and dist > 6.0):
 			e.position += dir * 3.0 * delta
 			e.position.x = clampf(e.position.x, -12.0, 12.0)
+			moving = true
 		elif dist < 10.0:
 			e.position -= dir * 1.5 * delta
 			e.position.x = clampf(e.position.x, -12.0, 12.0)
+			moving = true
+		_play_enemy_animation(e, moving)
 		var c: float = float(e.get_meta("cd")) - delta
 		if los and dist < 40.0 and c <= 0.0:
 			c = randf_range(0.8, 1.6)

@@ -63,6 +63,34 @@ jobs:
           "${SDKMANAGER}" --sdk_root="${ANDROID_HOME}" --list_installed
 
 
+      - name: Télécharger les ressources 3D et textures
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="https://raw.githubusercontent.com/cktang88/3d-fps/130ac2a5c856401ec36e7d35afcfefe40c5801f4/public/assets"
+          DEST="assets/external"
+          mkdir -p "$DEST"
+
+          fetch_asset() {
+            local source="$1"
+            local target="$2"
+            echo "Téléchargement : $target"
+            curl --fail --location --silent --show-error --retry 3 \
+              "$BASE/$source" -o "$DEST/$target"
+            test -s "$DEST/$target"
+          }
+
+          fetch_asset "models/characters/soldier.glb" "soldier.glb"
+          fetch_asset "models/fp/m4a1.glb" "m4a1_fp.glb"
+          fetch_asset "models/props/covered_car/covered_car.glb" "covered_car.glb"
+          fetch_asset "textures/Concrete034/Color.webp" "concrete_color.webp"
+          fetch_asset "textures/Concrete034/NormalGL.webp" "concrete_normal.webp"
+          fetch_asset "textures/Concrete034/Roughness.webp" "concrete_roughness.webp"
+
+          echo "Ressources téléchargées :"
+          du -h "$DEST"/*
+
       - name: Importer les ressources Godot
         shell: bash
         run: |
@@ -89,6 +117,10 @@ jobs:
             --exclude='./.git' \
             --exclude='./.github' \
             --exclude='./android-host' \
+            --exclude='./www' \
+            --exclude='./package.json' \
+            --exclude='./package-lock.json' \
+            --exclude='./capacitor.config.json' \
             --exclude='./backups' \
             --exclude='./dist' \
             --exclude='./build' \

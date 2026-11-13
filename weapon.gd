@@ -85,6 +85,19 @@ func setup(id: String) -> void:
 	mag_node.position = MAG_POS
 	add_child(mag_node)
 	_box(mag_node, Vector3(0.04, 0.14, 0.06), Vector3(0, -0.05, 0), Vector3(-10, 0, 0), dark)
+
+	# Remplacer le modèle géométrique par le modèle FPS M4A1
+	# lorsque la ressource externe est disponible.
+	var fp_scene := load("res://assets/external/m4a1_fp.glb") as PackedScene
+	if fp_scene != null:
+		for child in get_children():
+			child.visible = false
+		var fp_model := fp_scene.instantiate()
+		fp_model.scale = Vector3.ONE
+		add_child(fp_model)
+	else:
+		push_warning("M4A1 FPS GLB absent : utilisation du modèle procédural.")
+
 	# Bouche du canon + flash
 	muzzle = Marker3D.new()
 	muzzle.position = Vector3(0, 0.012, -0.62)
