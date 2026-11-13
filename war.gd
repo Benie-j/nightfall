@@ -36,6 +36,18 @@ var fire_zone: Panel
 var reload_zone: Panel
 var joy_base: Panel
 var joy_knob: Panel
+var ads_held := false
+var ads_amt := 0.0
+var sprint_amt := 0.0
+var body_ref
+var zones: Array = []
+var cross: Array = []
+var dmg_ind: Control
+var ind_t := 0.0
+var feed: Array = []
+var feed_lbl: Label
+var diag_lbl: Label
+var diag_t := 10.0
 
 func _mat(c: Color) -> StandardMaterial3D:
 	var s := StandardMaterial3D.new()
@@ -80,6 +92,31 @@ func _circle(fill: Color, border: Color) -> Panel:
 	p.add_theme_stylebox_override("panel", sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return p
+
+func _zone(cl: CanvasLayer, id: int, text: String, fs: int, l: float, t: float, r: float, b: float) -> Panel:
+	var p := _circle(Color(1, 1, 1, 0.10), Color(1, 1, 1, 0.5))
+	_ctrl(p, 1.0, 1.0, l, t, r, b)
+	var lb := _label(text, fs, HORIZONTAL_ALIGNMENT_CENTER)
+	lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	p.add_child(lb)
+	cl.add_child(p)
+	zones.append([p, id])
+	return p
+
+func _feed(text: String) -> void:
+	feed.append([text, 4.0])
+	if feed.size() > 4:
+		feed.pop_front()
+
+func _diag() -> String:
+	if body_ref == null:
+		return ""
+	if body_ref.fallback != null:
+		return "Modèle : secours (capsules) - hero.glb non chargé"
+	if body_ref.skeleton == null:
+		return "Modèle : hero.glb ÉCHEC (aucun squelette)"
+	return "Modèle : hero.glb OK - os reconnus %d/16" % body_ref.bone_ids.size()
 
 func _label(text: String, size: int, align: int) -> Label:
 	var l := Label.new()
@@ -128,14 +165,15 @@ func _ready() -> void:
 	cl.add_child(wave_lbl)
 	# Munitions
 	ammo_lbl = _label("", 44, HORIZONTAL_ALIGNMENT_RIGHT)
-	_ctrl(ammo_lbl, 1.0, 1.0, -420, -320, -30, -255)
+	_ctrl(ammo_lbl, 1.0, 0.0, -420, 74, -20, 134)
 	cl.add_child(ammo_lbl)
-	# Réticule
-	for r in [[-1, -14, 1, -6], [-1, 6, 1, 14], [-14, -1, -6, 1], [6, -1, 14, 1]]:
+	# Réticule dynamique (s'écarte en mouvement et au tir, disparaît en visée)
+	for d in [Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Vector2(1, 0)]:
 		var cr := ColorRect.new()
 		cr.color = Color(1, 1, 1, 0.85)
-		_ctrl(cr, 0.5, 0.5, r[0], r[1], r[2], r[3])
+		_ctrl(cr, 0.5, 0.5, 0, 0, 2, 2)
 		cl.add_child(cr)
+		cross.append([cr, d])
 	# Marqueur de touche (croix à 45 degrés)
 	for ang in [45.0, -45.0]:
 		var hm := ColorRect.new()
@@ -146,21 +184,12 @@ func _ready() -> void:
 		hm.visible = false
 		cl.add_child(hm)
 		hit_marks.append(hm)
-	# Zones tactiles : tir et rechargement (gérées par main.gd, multi-doigts)
-	fire_zone = _circle(Color(1, 1, 1, 0.10), Color(1, 1, 1, 0.55))
-	_ctrl(fire_zone, 1.0, 1.0, -250, -250, -90, -90)
-	var fl := _label("TIR", 30, HORIZONTAL_ALIGNMENT_CENTER)
-	fl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	fl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	fire_zone.add_child(fl)
-	cl.add_child(fire_zone)
-	reload_zone = _circle(Color(1, 1, 1, 0.10), Color(1, 1, 1, 0.45))
-	_ctrl(reload_zone, 1.0, 1.0, -350, -170, -270, -90)
-	var rl := _label("R", 28, HORIZONTAL_ALIGNMENT_CENTER)
-	rl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	rl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	reload_zone.add_child(rl)
-	cl.add_child(reload_zone)
+	# Zones tactiles (gérées par main.gd, multi-doigts) : 1 tir, 2 recharge, 3 viser, 4 saut, 5 accroupi
+	fire_zone = _zone(cl, 1, "TIR", 30, -250, -250, -90, -90)
+	reload_zone = _zone(cl, 2, "R", 28, -340, -150, -270, -80)
+	_zone(cl, 3, "VISER", 18, -130, -370, -40, -280)
+	_zone(cl, 4, "SAUT", 18, -370, -260, -290, -180)
+	_zone(cl, 5, "ACCR.", 16, -470, -170, -390, -90)
 	# Joystick flottant
 	joy_base = _circle(Color(1, 1, 1, 0.06), Color(1, 1, 1, 0.35))
 	joy_base.size = Vector2(160, 160)
@@ -170,16 +199,33 @@ func _ready() -> void:
 	joy_knob.size = Vector2(70, 70)
 	joy_knob.visible = false
 	cl.add_child(joy_knob)
+	# Indicateur de direction des tirs reçus
+	dmg_ind = Control.new()
+	dmg_ind.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ctrl(dmg_ind, 0.5, 0.5, 0, 0, 0, 0)
+	var bar := ColorRect.new()
+	bar.color = Color(0.9, 0.1, 0.1, 0.9)
+	bar.position = Vector2(-70, -210)
+	bar.size = Vector2(140, 12)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dmg_ind.add_child(bar)
+	dmg_ind.visible = false
+	cl.add_child(dmg_ind)
+	feed_lbl = _label("", 22, HORIZONTAL_ALIGNMENT_LEFT)
+	_ctrl(feed_lbl, 0.0, 0.0, 20, 60, 520, 190)
+	cl.add_child(feed_lbl)
+	diag_lbl = _label("", 18, HORIZONTAL_ALIGNMENT_LEFT)
+	_ctrl(diag_lbl, 0.0, 1.0, 20, -60, 760, -20)
+	cl.add_child(diag_lbl)
 	over = _label("", 48, HORIZONTAL_ALIGNMENT_CENTER)
 	over.visible = false
 	_ctrl(over, 0.5, 0.5, -400, -100, 400, 100)
 	cl.add_child(over)
 
 func zone_at(p: Vector2) -> int:
-	if _in_circle(fire_zone, p, 1.25):
-		return 1
-	if _in_circle(reload_zone, p, 1.4):
-		return 2
+	for z in zones:
+		if _in_circle(z[0], p, 1.25):
+			return z[1]
 	return 0
 
 func _in_circle(c: Control, p: Vector2, k: float) -> bool:
@@ -278,10 +324,10 @@ func _shoot() -> void:
 	cd = 60.0 / float(stats["rpm"])
 	ammo -= 1
 	weapon.kick()
-	cam_kick = minf(0.06, cam_kick + 0.010)
+	cam_kick = minf(0.06, cam_kick + 0.010 * (1.0 - ads_amt * 0.5))
 	var o: Vector3 = cam.global_position
 	var bs := cam.global_transform.basis
-	var spread: float = float(stats["spread"]) * (1.0 + motion * 1.5)
+	var spread: float = float(stats["spread"]) * (1.0 + motion * 1.5 + sprint_amt) * (1.0 - ads_amt * 0.65)
 	var fwd: Vector3 = -bs.z + bs.x * randf_range(-spread, spread) + bs.y * randf_range(-spread, spread)
 	fwd = fwd.normalized()
 	var end: Vector3 = o + fwd * 150.0
@@ -305,14 +351,24 @@ func _damage_enemy(e: Node3D, dmg: float) -> void:
 	if h <= 0.0:
 		enemies.erase(e)
 		score += 10
+		_feed("Soldat éliminé  +10")
+		hit_t = 0.25
 		var sb := e.get_meta("body") as StaticBody3D
 		sb.collision_layer = 0
 		create_tween().tween_property(e, "rotation:x", -PI / 2.0, 0.3)
 		get_tree().create_timer(3.0).timeout.connect(e.queue_free)
 
-func _hurt(n: float) -> void:
+func _hurt(n: float, src := Vector3.ZERO) -> void:
 	hp -= n
 	hurt_t = 0.35
+	if src != Vector3.ZERO:
+		var to := src - player.position
+		to.y = 0.0
+		var fwd := -player.global_transform.basis.z
+		fwd.y = 0.0
+		if to.length() > 0.1:
+			dmg_ind.rotation = -fwd.signed_angle_to(to, Vector3.UP)
+			ind_t = 1.2
 	if hp <= 0.0:
 		hp = 0.0
 		dead = true
@@ -342,7 +398,7 @@ func _update_enemies(delta: float) -> void:
 			c = randf_range(0.8, 1.6)
 			var target: Vector3 = eye
 			if randf() < 0.35:
-				_hurt(7.0)
+				_hurt(7.0, e.position)
 			else:
 				target += Vector3(randf_range(-1.5, 1.5), randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
 			_tracer(e.position + Vector3(0, 1.4, 0), target)
@@ -375,7 +431,10 @@ func _process(delta: float) -> void:
 		rt -= delta
 	cam_kick = lerpf(cam_kick, 0.0, minf(1.0, delta * 12.0))
 	cam.rotation.x = cam_kick
-	weapon.update(delta, motion, look)
+	var want_ads := ads_held and reload_t <= 0.0 and not dead
+	ads_amt = move_toward(ads_amt, 1.0 if want_ads else 0.0, delta * 7.0)
+	cam.fov = lerpf(70.0, 52.0, ads_amt) + sprint_amt * 4.0
+	weapon.update(delta, motion, look, ads_amt, sprint_amt)
 	look = Vector2.ZERO
 	hurt_t = maxf(0.0, hurt_t - delta)
 	hit_t = maxf(0.0, hit_t - delta)
@@ -388,3 +447,30 @@ func _process(delta: float) -> void:
 	hp_lbl.text = str(int(hp))
 	ammo_lbl.text = "RECHARGE…" if reload_t > 0.0 else "%d / %d" % [ammo, mag]
 	wave_lbl.text = "VAGUE %d   SCORE %d" % [wave, score]
+	ind_t = maxf(0.0, ind_t - delta)
+	dmg_ind.visible = ind_t > 0.0
+	var gap := 6.0 + 16.0 * clampf(motion + sprint_amt, 0.0, 1.5) + 14.0 * weapon.kick_v
+	for it in cross:
+		var cr: ColorRect = it[0]
+		var dd: Vector2 = it[1]
+		var bw := 2.0 if dd.x == 0.0 else 9.0
+		var bh := 9.0 if dd.x == 0.0 else 2.0
+		var cc := dd * (gap + 5.0)
+		cr.offset_left = cc.x - bw * 0.5
+		cr.offset_right = cc.x + bw * 0.5
+		cr.offset_top = cc.y - bh * 0.5
+		cr.offset_bottom = cc.y + bh * 0.5
+		cr.visible = ads_amt < 0.5
+	for f in feed:
+		f[1] -= delta
+	while not feed.is_empty() and feed[0][1] <= 0.0:
+		feed.pop_front()
+	var txt := ""
+	for f in feed:
+		txt += str(f[0]) + "\n"
+	feed_lbl.text = txt
+	if diag_t > 0.0:
+		diag_t -= delta
+		diag_lbl.text = _diag()
+	else:
+		diag_lbl.text = ""

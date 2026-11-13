@@ -7,6 +7,7 @@ const STATS = {
 }
 const REST_POS := Vector3(0.17, -0.19, -0.32)
 const MAG_POS := Vector3(0.0, -0.075, -0.04)
+const ADS_POS := Vector3(0.0, -0.082, -0.28)
 
 var stats: Dictionary = {}
 var muzzle: Marker3D
@@ -120,18 +121,23 @@ func start_reload(duration: float) -> void:
 	reload_dur = maxf(duration, 0.1)
 	reload_t = reload_dur
 
-func update(delta: float, move: float, look: Vector2) -> void:
-	bob_t += delta * (2.0 + move * 8.0)
-	var target := Vector2(clampf(-look.x * 0.0008, -0.04, 0.04), clampf(look.y * 0.0008, -0.04, 0.04))
+func update(delta: float, move: float, look: Vector2, ads: float, sprint: float) -> void:
+	bob_t += delta * (2.0 + move * 8.0 + sprint * 3.0)
+	var calm := 1.0 - ads * 0.8
+	var target := Vector2(clampf(-look.x * 0.0008, -0.04, 0.04), clampf(look.y * 0.0008, -0.04, 0.04)) * calm
 	sway = sway.lerp(target, minf(1.0, delta * 8.0))
-	var p := REST_POS
-	p += Vector3(sin(bob_t) * 0.008 * move, -absf(sin(bob_t)) * 0.01 * move, 0.0)
+	var p := REST_POS.lerp(ADS_POS, ads)
+	p += Vector3(sin(bob_t) * 0.008 * move * calm, -absf(sin(bob_t)) * 0.01 * move * calm, 0.0)
 	p += Vector3(sway.x, sway.y, 0.0)
-	p.y += sin(bob_t * 0.5) * 0.0015
+	p.y += sin(bob_t * 0.5) * 0.0015 * calm
 	var r := Vector3(sway.y * 2.0, sway.x * 3.0, 0.0)
+	# Course : arme abaissée et inclinée en travers
+	p += Vector3(-0.07, -0.05, 0.03) * sprint
+	r += Vector3(-0.30, 0.55, 0.12) * sprint
 	kick_v = maxf(0.0, kick_v - delta * 9.0)
-	p.z += kick_v * 0.035
-	r.x += kick_v * 0.05
+	var kick_k := 1.0 - ads * 0.5
+	p.z += kick_v * 0.035 * kick_k
+	r.x += kick_v * 0.05 * kick_k
 	var mag_off := 0.0
 	if reload_t > 0.0:
 		reload_t -= delta

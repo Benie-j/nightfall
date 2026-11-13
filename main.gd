@@ -2,6 +2,8 @@ extends Node3D
 
 const EYE_H := 1.65
 const WALK_SPEED := 5.0
+const SPRINT_SPEED := 8.0
+const CROUCH_SPEED := 2.6
 const LOOK_SENS := 0.0045
 const RENDER_SCALE := 0.85
 
@@ -16,6 +18,15 @@ var move_idx := -1
 var look_idx := -1
 var fire_idx := -1
 var reload_idx := -1
+var ads_idx := -1
+var crouching := false
+var jump_req := false
+var py := 0.0
+var vy := 0.0
+var sprint_k := 0.0
+var eye_h := EYE_H
+var cap_shape: CapsuleShape3D
+var cap_node: CollisionShape3D
 var move_origin := Vector2.ZERO
 var move_vec := Vector2.ZERO
 var look_delta := Vector2.ZERO
@@ -137,13 +148,13 @@ func _ready() -> void:
 	player.collision_mask = 1
 	player.motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
 	add_child(player)
-	var cs := CollisionShape3D.new()
-	var cap := CapsuleShape3D.new()
-	cap.radius = 0.35
-	cap.height = 1.7
-	cs.shape = cap
-	cs.position.y = 0.85
-	player.add_child(cs)
+	cap_node = CollisionShape3D.new()
+	cap_shape = CapsuleShape3D.new()
+	cap_shape.radius = 0.35
+	cap_shape.height = 1.7
+	cap_node.shape = cap_shape
+	cap_node.position.y = 0.85
+	player.add_child(cap_node)
 	# Le corps du soldat n'est plus visible en vue subjective : il ne projette que son ombre.
 	body = preload("res://hero.gd").new()
 	player.add_child(body)
@@ -160,6 +171,7 @@ func _ready() -> void:
 	war = preload("res://war.gd").new()
 	war.player = player
 	war.cam = cam
+	war.body_ref = body
 	add_child(war)
 
 func _input(e) -> void:
@@ -171,8 +183,14 @@ func _input(e) -> void:
 				fire_idx = e.index
 				war.fire_held = true
 			elif z == 2:
-				reload_idx = e.index
 				war.reload()
+			elif z == 3:
+				ads_idx = e.index
+				war.ads_held = true
+			elif z == 4:
+				jump_req = true
+			elif z == 5:
+				crouching = not crouching
 			elif e.position.x < w.x * 0.5:
 				if move_idx == -1:
 					move_idx = e.index
@@ -184,8 +202,9 @@ func _input(e) -> void:
 			if e.index == fire_idx:
 				fire_idx = -1
 				war.fire_held = false
-			if e.index == reload_idx:
-				reload_idx = -1
+			if e.index == ads_idx:
+				ads_idx = -1
+				war.ads_held = false
 			if e.index == move_idx:
 				move_idx = -1
 				move_vec = Vector2.ZERO
@@ -202,8 +221,9 @@ func _input(e) -> void:
 			look_delta += e.relative
 
 func _process(delta: float) -> void:
-	yaw -= look_delta.x * LOOK_SENS
-	pitch = clampf(pitch - look_delta.y * LOOK_SENS, -1.45, 1.45)
+	var sens := LOOK_SENS * (1.0 - 0.45 * war.ads_amt)
+	yaw -= look_delta.x * sens
+	pitch = clampf(pitch - look_delta.y * sens, -1.45, 1.45)
 	player.rotation.y = yaw
 	head.rotation.x = pitch
 	var v := Input.get_vector("ui_left", "ui_right", "ui_down", "ui_up") + move_vec
@@ -211,14 +231,40 @@ func _process(delta: float) -> void:
 		v = v.normalized()
 	if war.dead:
 		v = Vector2.ZERO
+	# Course automatique : joystick poussé à fond, sans viser, tirer ni recharger
+	var want_sprint := v.length() > 0.92 and not crouching and not war.ads_held and not war.fire_held and war.reload_t <= 0.0
+	sprint_k = lerpf(sprint_k, 1.0 if want_sprint else 0.0, minf(1.0, delta * 8.0))
+	var spd := WALK_SPEED + (SPRINT_SPEED - WALK_SPEED) * sprint_k
+	if crouching:
+		spd = CROUCH_SPEED
+	if war.ads_held:
+		spd *= 0.6
 	var bs := player.global_transform.basis
 	var dir := bs.x * v.x - bs.z * v.y
 	dir.y = 0.0
-	player.velocity = dir * WALK_SPEED
+	player.velocity = dir * spd
 	player.move_and_slide()
-	player.position.y = 0.0
+	# Saut (hauteur gérée à la main : le sol est une couche à part)
+	if jump_req:
+		if py <= 0.001 and not crouching and not war.dead:
+			vy = 5.2
+		jump_req = false
+	vy -= 16.0 * delta
+	py = maxf(0.0, py + vy * delta)
+	if py == 0.0 and vy < 0.0:
+		vy = 0.0
+	player.position.y = py
+	# Accroupi : yeux plus bas, capsule plus courte
+	eye_h = lerpf(eye_h, 1.15 if crouching else EYE_H, minf(1.0, delta * 10.0))
+	head.position.y = eye_h
+	cap_shape.height = 1.1 if crouching else 1.7
+	cap_node.position.y = cap_shape.height * 0.5
 	var amount := v.length() if v.length() > 0.1 else 0.0
 	body.animate(amount, delta)
-	war.motion = amount
+	var mo := amount * (0.5 if crouching else 1.0)
+	if py > 0.01:
+		mo = 1.0
+	war.motion = mo
+	war.sprint_amt = sprint_k
 	war.look += look_delta
 	look_delta = Vector2.ZERO
