@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="\( (cd " \)(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "./hero.gd" && -f "./war.gd" ]]; then
   PROJECT_DIR="$(pwd)"
 elif [[ -f "$SCRIPT_DIR/hero.gd" ]]; then
