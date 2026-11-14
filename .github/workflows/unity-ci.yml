@@ -2,6 +2,15 @@ name: Unity - verification et tests
 
 # Lancement manuel uniquement.
 on:
+  push:
+    paths:
+      - 'UnityProject/**'
+      - 'tools/check_csharp_static.py'
+      - 'tools/verify_unity_project.py'
+      - 'tools/osm_to_unity.py'
+      - 'tools/tests/test_osm_to_unity.py'
+      - '.github/workflows/unity-ci.yml'
+      - '.github/workflows/unity-android.yml'
   workflow_dispatch:
 
 jobs:
@@ -28,6 +37,7 @@ jobs:
         run: python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/unity-*.yml')]; print('YAML OK')"
 
   unity-tests:
+    if: github.event_name == 'workflow_dispatch'
     name: Tests Unity ${{ matrix.mode }}
     needs: static-check
     runs-on: ubuntu-latest

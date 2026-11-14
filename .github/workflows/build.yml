@@ -1,12 +1,35 @@
-name: APK
-on: [push, workflow_dispatch]
+name: Godot - APK
+
+on:
+  push:
+    paths:
+      - '*.gd'
+      - '*.tscn'
+      - '*.tres'
+      - '*.godot'
+      - 'project.godot'
+      - 'export_presets.cfg'
+      - '**/*.gd'
+      - '**/*.tscn'
+      - '**/*.tres'
+      - '**/*.godot'
+      - 'data/**'
+      - 'assets/**'
+      - 'models/**'
+      - 'tex/**'
+      - 'audio/**'
+      - 'android-host/**'
+      - 'tools/build_yopougon_map.py'
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     container: barichello/godot-ci:4.3
     steps:
       - uses: actions/checkout@v4
-      - name: Setup
+
+      - name: Setup Godot Android
         run: |
           mkdir -p ~/.local/share/godot/export_templates ~/.config/godot build
           mv /root/.local/share/godot/export_templates/4.3.stable ~/.local/share/godot/export_templates/ || true
@@ -20,9 +43,15 @@ jobs:
           export/android/debug_keystore_user = "androiddebugkey"
           export/android/debug_keystore_pass = "android"
           EOF
-      - name: Export
+
+      - name: Export Godot Android
         run: |
           godot --headless --import || true
           godot --headless --export-debug "Android" build/nightfall.apk
-      - uses: actions/upload-artifact@v4
-        with: { name: nightfall-apk, path: build/nightfall.apk }
+
+      - name: Upload Godot APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-godot-apk
+          path: build/nightfall.apk
+          if-no-files-found: error
