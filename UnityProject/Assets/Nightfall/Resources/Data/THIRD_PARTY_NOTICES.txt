@@ -1,0 +1,6 @@
+NIGHTFALL (Unity) - provenance des ressources
+- Donnees de campagne (campaign.json, mission_01.json, intro.json) : reprises du depot Godot original (texte du projet).
+- hero.glb (SourceAssets/, NON importe dans Unity) : metadonnees MIT / Microsoft 2020 d'apres le fichier ; a verifier avant publication.
+- Tout le reste (textures, sons, modeles) est genere par code : procedural/provisoire, aucune licence tierce.
+- OpenStreetMap : aucune donnee OSM n'est incluse dans cette livraison (le fichier n'existait pas dans l'archive source).
+  Si des donnees OSM sont ajoutees : (c) OpenStreetMap contributors, licence ODbL.

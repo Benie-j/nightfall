@@ -1,0 +1,112 @@
+name: Unity - APK Android (ARM32 + ARM64)
+
+# Deux builds INDEPENDANTS (IL2CPP), un par architecture, lancement manuel.
+# Sorties : build/Android/nightfall-arm32.apk et build/Android/nightfall-arm64.apk
+# (noms fixés par Nightfall.EditorTools.BuildScript : Run(...) ecrit <dossier>/<fileName>).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arm32
+            method: Nightfall.EditorTools.BuildScript.BuildArm32
+            abi: armeabi-v7a
+          - name: arm64
+            method: Nightfall.EditorTools.BuildScript.BuildArm64
+            abi: arm64-v8a
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Licence Unity (echec explicite si absente)
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        run: |
+          if [ -z "$UNITY_LICENSE" ] && [ -z "$UNITY_SERIAL" ]; then
+            echo "::error::Ni UNITY_LICENSE ni UNITY_SERIAL : activation impossible. Voir UNITY_LICENSE_SETUP.md."
+            exit 1
+          fi
+
+      - name: Entree Input Manager (doit rester actif)
+        run: |
+          F=UnityProject/ProjectSettings/ProjectSettings.asset
+          if [ -f "$F" ] && grep -q "activeInputHandler: 1" "$F"; then
+            sed -i 's/activeInputHandler: 1/activeInputHandler: 0/' "$F"
+            echo "activeInputHandler force a 0 (le jeu utilise Input.touches)."
+          fi
+
+      - name: Liberer de l'espace disque
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - uses: actions/cache@v4
+        with:
+          path: UnityProject/Library
+          key: Library-android-${{ matrix.name }}-${{ hashFiles('UnityProject/Packages/manifest.json', 'UnityProject/ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: Library-android-${{ matrix.name }}-
+
+      - name: Compiler l'APK ${{ matrix.name }}
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        with:
+          projectPath: UnityProject
+          unityVersion: auto
+          targetPlatform: Android
+          buildMethod: ${{ matrix.method }}
+          buildName: nightfall-${{ matrix.name }}
+          androidExportType: androidPackage
+          allowDirtyBuild: true
+
+      - name: Localiser et verifier l'APK (architecture)
+        run: |
+          mkdir -p dist
+          APK=$(find . -name "nightfall-${{ matrix.name }}.apk" -not -path "./dist/*" | head -n 1)
+          ls -l build 2>/dev/null || true
+          test -n "$APK" || { echo "::error::nightfall-${{ matrix.name }}.apk introuvable"; exit 1; }
+          cp "$APK" dist/nightfall-${{ matrix.name }}.apk
+          unzip -l dist/nightfall-${{ matrix.name }}.apk | grep "lib/" | tee dist/abi-${{ matrix.name }}.txt
+          python3 tools/verify_apk_arch.py dist/nightfall-${{ matrix.name }}.apk --expect ${{ matrix.name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-${{ matrix.name }}-apk
+          path: dist/nightfall-${{ matrix.name }}.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightfall-${{ matrix.name }}-logs
+          path: |
+            dist/abi-${{ matrix.name }}.txt
+            UnityProject/Logs
+          if-no-files-found: ignore
+
+  verify-pair:
+    name: Meme versionName / versionCode
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: apks
+      - name: Comparer les versions des deux APK
+        run: |
+          AAPT=$(find "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/build-tools" -name aapt2 | sort | tail -n 1)
+          test -n "$AAPT" || { echo "::warning::aapt2 introuvable : comparaison des versions ignoree"; exit 0; }
+          V32=$("$AAPT" dump badging apks/nightfall-arm32-apk/nightfall-arm32.apk | grep -o "versionCode='[0-9]*' versionName='[^']*'")
+          V64=$("$AAPT" dump badging apks/nightfall-arm64-apk/nightfall-arm64.apk | grep -o "versionCode='[0-9]*' versionName='[^']*'")
+          echo "arm32: $V32"; echo "arm64: $V64"
+          test "$V32" = "$V64" || { echo "::error::versions differentes entre les deux APK"; exit 1; }
